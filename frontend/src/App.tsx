@@ -149,8 +149,9 @@ export function App() {
     kind: "idle",
   });
   const [isPainting, setIsPainting] = useState(false);
-  const [trainingSplit, setTrainingSplit] =
-    useState<TrainingSplitForm>(DEFAULT_TRAINING_SPLIT);
+  const [trainingSplit, setTrainingSplit] = useState<TrainingSplitForm>(
+    DEFAULT_TRAINING_SPLIT,
+  );
   const [trainingFile, setTrainingFile] = useState<File | null>(null);
   const [trainingPreviewState, setTrainingPreviewState] =
     useState<TrainingPreviewState>({ kind: "idle" });
@@ -347,7 +348,9 @@ export function App() {
       setTrainingPreviewState({
         kind: "error",
         message:
-          error instanceof Error ? error.message : "CSV preview request failed.",
+          error instanceof Error
+            ? error.message
+            : "CSV preview request failed.",
       });
     }
   }
@@ -404,7 +407,11 @@ export function App() {
                     : "Upload a labeled MNIST CSV"}
                 </h2>
               </div>
-              <div className="mode-toggle" role="group" aria-label="Workspace mode">
+              <div
+                className="mode-toggle"
+                role="group"
+                aria-label="Workspace mode"
+              >
                 <button
                   className={`mode-toggle-button ${
                     workspaceMode === "predict"
@@ -460,8 +467,9 @@ export function App() {
                 </div>
 
                 <p className="status-copy board-copy">
-                  Click or drag across the board. The frontend sends the raw pixel
-                  grid and the backend performs centering and scale normalization.
+                  Click or drag across the board. The frontend sends the raw
+                  pixel grid and the backend performs centering and scale
+                  normalization.
                 </p>
 
                 <div className="drawing-stage">
@@ -547,16 +555,16 @@ export function App() {
                         step="1"
                         value={trainingSplit.train}
                         onChange={(event) => {
-                          handleTrainingSplitChange("train", event.target.value);
+                          handleTrainingSplitChange(
+                            "train",
+                            event.target.value,
+                          );
                         }}
                       />
                     </div>
 
                     <div className="training-field">
-                      <label
-                        className="field-label"
-                        htmlFor="split-validation"
-                      >
+                      <label className="field-label" htmlFor="split-validation">
                         Validation split
                       </label>
                       <input
@@ -662,7 +670,8 @@ export function App() {
                       <div>
                         <dt>Labels</dt>
                         <dd>
-                          {trainingPreviewState.payload.dataset.label_range.min} to{" "}
+                          {trainingPreviewState.payload.dataset.label_range.min}{" "}
+                          to{" "}
                           {trainingPreviewState.payload.dataset.label_range.max}
                         </dd>
                       </div>
@@ -671,28 +680,38 @@ export function App() {
                     <div className="preview-stat-grid" aria-live="polite">
                       <article className="preview-stat-card">
                         <p className="preview-stat-copy">
-                          Train {trainingPreviewState.payload.split.counts.train} examples
-                        </p>
-                        <strong>
-                          {formatPercent(trainingPreviewState.payload.split.ratios.train)}
-                        </strong>
-                      </article>
-                      <article className="preview-stat-card">
-                        <p className="preview-stat-copy">
-                          Validation {trainingPreviewState.payload.split.counts.validation} examples
+                          Train{" "}
+                          {trainingPreviewState.payload.split.counts.train}{" "}
+                          examples
                         </p>
                         <strong>
                           {formatPercent(
-                            trainingPreviewState.payload.split.ratios.validation,
+                            trainingPreviewState.payload.split.ratios.train,
                           )}
                         </strong>
                       </article>
                       <article className="preview-stat-card">
                         <p className="preview-stat-copy">
-                          Test {trainingPreviewState.payload.split.counts.test} examples
+                          Validation{" "}
+                          {trainingPreviewState.payload.split.counts.validation}{" "}
+                          examples
                         </p>
                         <strong>
-                          {formatPercent(trainingPreviewState.payload.split.ratios.test)}
+                          {formatPercent(
+                            trainingPreviewState.payload.split.ratios
+                              .validation,
+                          )}
+                        </strong>
+                      </article>
+                      <article className="preview-stat-card">
+                        <p className="preview-stat-copy">
+                          Test {trainingPreviewState.payload.split.counts.test}{" "}
+                          examples
+                        </p>
+                        <strong>
+                          {formatPercent(
+                            trainingPreviewState.payload.split.ratios.test,
+                          )}
                         </strong>
                       </article>
                     </div>
@@ -1127,7 +1146,9 @@ function readTextFromFile(file: File) {
       reject(new Error("Could not read the selected CSV file."));
     };
     reader.onerror = () => {
-      reject(reader.error ?? new Error("Could not read the selected CSV file."));
+      reject(
+        reader.error ?? new Error("Could not read the selected CSV file."),
+      );
     };
 
     reader.readAsText(file);
