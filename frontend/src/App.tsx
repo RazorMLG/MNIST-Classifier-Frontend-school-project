@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 
 import "./App.css";
 
@@ -90,10 +90,55 @@ type PredictionState =
   | { kind: "ready"; payload: PredictionPayload }
   | { kind: "error"; message: string };
 
+type WorkspaceMode = "predict" | "training";
+
+type TrainingSplitForm = {
+  train: number;
+  validation: number;
+  test: number;
+};
+
+type TrainingPreviewPayload = {
+  file_name: string;
+  dataset: {
+    example_count: number;
+    feature_count: number;
+    label_range: {
+      min: number;
+      max: number;
+    };
+  };
+  split: {
+    ratios: {
+      train: number;
+      validation: number;
+      test: number;
+    };
+    counts: {
+      train: number;
+      validation: number;
+      test: number;
+    };
+  };
+};
+
+type TrainingPreviewState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "ready"; payload: TrainingPreviewPayload }
+  | { kind: "error"; message: string };
+
+const DEFAULT_TRAINING_SPLIT: TrainingSplitForm = {
+  train: 80,
+  validation: 10,
+  test: 10,
+};
+
 export function App() {
   const [bootstrapState, setBootstrapState] = useState<BootstrapState>({
     kind: "loading",
   });
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("predict");
   const [leaderboardMetric, setLeaderboardMetric] =
     useState<SortableMetricKey>("accuracy");
   const [selectedModelId, setSelectedModelId] = useState("");
@@ -104,6 +149,11 @@ export function App() {
     kind: "idle",
   });
   const [isPainting, setIsPainting] = useState(false);
+  const [trainingSplit, setTrainingSplit] =
+    useState<TrainingSplitForm>(DEFAULT_TRAINING_SPLIT);
+  const [trainingFile, setTrainingFile] = useState<File | null>(null);
+  const [trainingPreviewState, setTrainingPreviewState] =
+    useState<TrainingPreviewState>({ kind: "idle" });
 
   useEffect(() => {
     let isActive = true;
@@ -163,6 +213,12 @@ export function App() {
           compareModels(leftModel, rightModel, leaderboardMetric),
         )
       : [];
+  const trainingSplitTotal =
+    trainingSplit.train + trainingSplit.validation + trainingSplit.test;
+  const canPreviewTrainingSplit =
+    bootstrapState.kind === "ready" &&
+    trainingFile !== null &&
+    trainingPreviewState.kind !== "loading";
 
   const readinessLabel =
     bootstrapState.kind === "ready" && bootstrapState.health.storage.ready
@@ -225,257 +281,587 @@ export function App() {
     setPredictionState({ kind: "idle" });
   }
 
+  function handleTrainingFileChange(event: ChangeEvent<HTMLInputElement>) {
+    setTrainingFile(event.target.files?.[0] ?? null);
+    setTrainingPreviewState({ kind: "idle" });
+  }
+
+  function handleTrainingSplitChange(
+    key: keyof TrainingSplitForm,
+    value: string,
+  ) {
+    const numericValue = Number(value);
+
+    setTrainingSplit((currentSplit) => ({
+      ...currentSplit,
+      [key]: Number.isFinite(numericValue) ? numericValue : 0,
+    }));
+    setTrainingPreviewState({ kind: "idle" });
+  }
+
+  async function handlePreviewTrainingSplit() {
+    if (!trainingFile) {
+      return;
+    }
+
+    if (trainingSplit.train <= 0) {
+      setTrainingPreviewState({
+        kind: "error",
+        message: "Training split must be greater than zero.",
+      });
+      return;
+    }
+
+    if (Math.abs(trainingSplitTotal - 100) > 0.001) {
+      setTrainingPreviewState({
+        kind: "error",
+        message: "Split ratios must total 100 before preview.",
+      });
+      return;
+    }
+
+    setTrainingPreviewState({ kind: "loading" });
+
+    try {
+      const payload = await fetchJson<TrainingPreviewPayload>(
+        "/api/training/csv-preview",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            file_name: trainingFile.name,
+            csv_text: await readTextFromFile(trainingFile),
+            split: {
+              train_ratio: toSplitRatio(trainingSplit.train),
+              validation_ratio: toSplitRatio(trainingSplit.validation),
+              test_ratio: toSplitRatio(trainingSplit.test),
+            },
+          }),
+        },
+      );
+
+      setTrainingPreviewState({ kind: "ready", payload });
+    } catch (error) {
+      setTrainingPreviewState({
+        kind: "error",
+        message:
+          error instanceof Error ? error.message : "CSV preview request failed.",
+      });
+    }
+  }
+
+  const canChooseModel =
+    bootstrapState.kind === "ready" && bootstrapState.models.length > 0;
+
   return (
     <main className="app-shell">
       <section className="hero-panel">
-        <p className="eyebrow">MNIST shipped models</p>
-        <h1>Inspect leaderboard metadata. Score a digit live.</h1>
-        <p className="summary">
-          This tracer bullet keeps the app bootable while exposing shipped model
-          metrics, dataset lineage, and detail metadata in the UI, then reuses
-          the selected built-in model for the existing prediction flow.
-        </p>
+        <div className="hero-copy">
+          <p className="eyebrow">MNIST model catalog</p>
+          <h1>Inspect leaderboard metadata. Score a digit live.</h1>
+          <p className="summary">
+            This tracer bullet keeps the app bootable while exposing model
+            metrics, dataset lineage, and detail metadata in the UI, then reuses
+            the selected model for the existing prediction flow.
+          </p>
+        </div>
+
+        <div className="hero-meta" aria-live="polite">
+          <span
+            className={`status-pill status-pill--${
+              bootstrapState.kind === "ready"
+                ? "ready"
+                : bootstrapState.kind === "error"
+                  ? "error"
+                  : "loading"
+            }`}
+          >
+            {readinessLabel}
+          </span>
+          <p className="hero-note">
+            {bootstrapState.kind === "loading"
+              ? "Checking backend status and loading model metadata."
+              : bootstrapState.kind === "error"
+                ? `The frontend could not reach the backend: ${bootstrapState.message}`
+                : `${bootstrapState.models.length} model${
+                    bootstrapState.models.length === 1 ? "" : "s"
+                  } loaded for inspection and live scoring.`}
+          </p>
+        </div>
       </section>
 
       <section className="workspace-grid">
-        <section className="status-card" aria-live="polite">
-          <div className="status-row">
-            <span
-              className={`status-pill status-pill--${
-                bootstrapState.kind === "ready"
-                  ? "ready"
-                  : bootstrapState.kind === "error"
-                    ? "error"
-                    : "loading"
-              }`}
-            >
-              {readinessLabel}
-            </span>
-            <span className="service-name">
-              {bootstrapState.kind === "ready"
-                ? bootstrapState.health.service
-                : "mnist-backend"}
-            </span>
-          </div>
+        <div className="workspace-primary">
+          <section className="board-card">
+            <div className="panel-heading">
+              <div>
+                <p className="panel-kicker">Workspace mode</p>
+                <h2>
+                  {workspaceMode === "predict"
+                    ? "Paint a digit sample"
+                    : "Upload a labeled MNIST CSV"}
+                </h2>
+              </div>
+              <div className="mode-toggle" role="group" aria-label="Workspace mode">
+                <button
+                  className={`mode-toggle-button ${
+                    workspaceMode === "predict"
+                      ? "mode-toggle-button--active"
+                      : ""
+                  }`}
+                  type="button"
+                  onClick={() => setWorkspaceMode("predict")}
+                >
+                  Prediction mode
+                </button>
+                <button
+                  className={`mode-toggle-button ${
+                    workspaceMode === "training"
+                      ? "mode-toggle-button--active"
+                      : ""
+                  }`}
+                  type="button"
+                  onClick={() => setWorkspaceMode("training")}
+                >
+                  Training mode
+                </button>
+              </div>
+            </div>
 
-          {bootstrapState.kind === "loading" ? (
-            <p className="status-copy">
-              Checking backend status and loading shipped model metadata.
-            </p>
-          ) : null}
+            {workspaceMode === "predict" ? (
+              <>
+                <div className="control-row">
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={handleClearBoard}
+                  >
+                    Clear board
+                  </button>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={
+                      bootstrapState.kind !== "ready" ||
+                      !selectedModelId ||
+                      !hasInk ||
+                      predictionState.kind === "loading"
+                    }
+                    onClick={() => {
+                      void handlePredict();
+                    }}
+                  >
+                    {predictionState.kind === "loading"
+                      ? "Scoring digit"
+                      : "Run prediction"}
+                  </button>
+                </div>
 
-          {bootstrapState.kind === "error" ? (
-            <p className="status-copy">
-              The frontend could not reach the backend: {bootstrapState.message}
-            </p>
-          ) : null}
+                <p className="status-copy board-copy">
+                  Click or drag across the board. The frontend sends the raw pixel
+                  grid and the backend performs centering and scale normalization.
+                </p>
 
-          {bootstrapState.kind === "ready" ? (
-            <>
+                <div className="drawing-stage">
+                  <div
+                    className="drawing-frame"
+                    onPointerLeave={() => setIsPainting(false)}
+                  >
+                    <div
+                      className="drawing-grid"
+                      role="grid"
+                      aria-label="Digit drawing board"
+                    >
+                      {canvasPixels.map((pixel, index) => {
+                        const row = Math.floor(index / DRAWING_GRID_SIZE);
+                        const column = index % DRAWING_GRID_SIZE;
+
+                        return (
+                          <button
+                            key={index}
+                            aria-label={`Paint row ${row + 1} column ${column + 1}`}
+                            aria-pressed={pixel > 0}
+                            className={`pixel-button ${
+                              pixel > 0 ? "pixel-button--active" : ""
+                            }`}
+                            type="button"
+                            onClick={() => handlePaint(index)}
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              setIsPainting(true);
+                              handlePaint(index);
+                            }}
+                            onPointerEnter={() => {
+                              if (isPainting) {
+                                handlePaint(index);
+                              }
+                            }}
+                            onPointerUp={() => setIsPainting(false)}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="status-copy board-copy">
+                  Upload a labeled CSV that matches the bundled MNIST training
+                  schema, then preview how the default or adjusted split ratios
+                  will divide the dataset before training starts.
+                </p>
+
+                <div className="training-intake-grid">
+                  <div className="training-field training-field--wide">
+                    <label className="field-label" htmlFor="training-csv">
+                      Training CSV
+                    </label>
+                    <input
+                      id="training-csv"
+                      className="training-file-input"
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={handleTrainingFileChange}
+                    />
+                    <p className="helper-copy">
+                      {trainingFile
+                        ? `${trainingFile.name} selected for preview.`
+                        : "Use the labeled training format: label followed by pixel0 through pixel783."}
+                    </p>
+                  </div>
+
+                  <div className="training-split-grid">
+                    <div className="training-field">
+                      <label className="field-label" htmlFor="split-train">
+                        Train split
+                      </label>
+                      <input
+                        id="split-train"
+                        className="training-input"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={trainingSplit.train}
+                        onChange={(event) => {
+                          handleTrainingSplitChange("train", event.target.value);
+                        }}
+                      />
+                    </div>
+
+                    <div className="training-field">
+                      <label
+                        className="field-label"
+                        htmlFor="split-validation"
+                      >
+                        Validation split
+                      </label>
+                      <input
+                        id="split-validation"
+                        className="training-input"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={trainingSplit.validation}
+                        onChange={(event) => {
+                          handleTrainingSplitChange(
+                            "validation",
+                            event.target.value,
+                          );
+                        }}
+                      />
+                    </div>
+
+                    <div className="training-field">
+                      <label className="field-label" htmlFor="split-test">
+                        Test split
+                      </label>
+                      <input
+                        id="split-test"
+                        className="training-input"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={trainingSplit.test}
+                        onChange={(event) => {
+                          handleTrainingSplitChange("test", event.target.value);
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="control-row">
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={!canPreviewTrainingSplit}
+                    onClick={() => {
+                      void handlePreviewTrainingSplit();
+                    }}
+                  >
+                    {trainingPreviewState.kind === "loading"
+                      ? "Previewing split"
+                      : "Preview split"}
+                  </button>
+                </div>
+
+                {Math.abs(trainingSplitTotal - 100) > 0.001 ? (
+                  <p className="status-copy">
+                    Split ratios must total 100 before preview.
+                  </p>
+                ) : null}
+
+                {trainingPreviewState.kind === "idle" ? (
+                  <p className="status-copy">
+                    Choose a labeled CSV and preview the train, validation, and
+                    test counts before launching the first custom training flow.
+                  </p>
+                ) : null}
+
+                {trainingPreviewState.kind === "error" ? (
+                  <p className="status-copy">
+                    CSV preview failed: {trainingPreviewState.message}
+                  </p>
+                ) : null}
+
+                {trainingPreviewState.kind === "loading" ? (
+                  <p className="status-copy">
+                    Validating the CSV schema and calculating split sizes.
+                  </p>
+                ) : null}
+
+                {trainingPreviewState.kind === "ready" ? (
+                  <>
+                    <dl className="details-grid details-grid--compact">
+                      <div>
+                        <dt>File</dt>
+                        <dd>{trainingPreviewState.payload.file_name}</dd>
+                      </div>
+                      <div>
+                        <dt>Examples</dt>
+                        <dd>
+                          {formatCount(
+                            trainingPreviewState.payload.dataset.example_count,
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Features</dt>
+                        <dd>
+                          {formatCount(
+                            trainingPreviewState.payload.dataset.feature_count,
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Labels</dt>
+                        <dd>
+                          {trainingPreviewState.payload.dataset.label_range.min} to{" "}
+                          {trainingPreviewState.payload.dataset.label_range.max}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div className="preview-stat-grid" aria-live="polite">
+                      <article className="preview-stat-card">
+                        <p className="preview-stat-copy">
+                          Train {trainingPreviewState.payload.split.counts.train} examples
+                        </p>
+                        <strong>
+                          {formatPercent(trainingPreviewState.payload.split.ratios.train)}
+                        </strong>
+                      </article>
+                      <article className="preview-stat-card">
+                        <p className="preview-stat-copy">
+                          Validation {trainingPreviewState.payload.split.counts.validation} examples
+                        </p>
+                        <strong>
+                          {formatPercent(
+                            trainingPreviewState.payload.split.ratios.validation,
+                          )}
+                        </strong>
+                      </article>
+                      <article className="preview-stat-card">
+                        <p className="preview-stat-copy">
+                          Test {trainingPreviewState.payload.split.counts.test} examples
+                        </p>
+                        <strong>
+                          {formatPercent(trainingPreviewState.payload.split.ratios.test)}
+                        </strong>
+                      </article>
+                    </div>
+                  </>
+                ) : null}
+              </>
+            )}
+          </section>
+
+          <section
+            className="leaderboard-panel"
+            aria-labelledby="leaderboard-heading"
+          >
+            <div className="panel-heading panel-heading--tight">
+              <div>
+                <p className="panel-kicker">Model leaderboard</p>
+                <h2 id="leaderboard-heading">Compare available entries</h2>
+              </div>
+              <div className="sort-control">
+                <label className="field-label" htmlFor="leaderboard-sort">
+                  Sort leaderboard by
+                </label>
+                <select
+                  id="leaderboard-sort"
+                  className="model-select"
+                  disabled={bootstrapState.kind !== "ready"}
+                  value={leaderboardMetric}
+                  onChange={(event) => {
+                    setLeaderboardMetric(
+                      event.target.value as SortableMetricKey,
+                    );
+                  }}
+                >
+                  <option value="accuracy">Accuracy</option>
+                  <option value="macro_f1">Macro F1</option>
+                  <option value="avg_inference_ms">Inference latency</option>
+                </select>
+              </div>
+            </div>
+
+            {bootstrapState.kind === "ready" ? (
+              <div className="leaderboard-table-frame">
+                <table
+                  className="leaderboard-table"
+                  aria-label="Model leaderboard"
+                >
+                  <thead>
+                    <tr>
+                      <th scope="col">Model</th>
+                      <th scope="col">Accuracy</th>
+                      <th scope="col">Macro F1</th>
+                      <th scope="col">Latency</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedModels.map((model, index) => {
+                      const isSelected = model.id === selectedModelId;
+
+                      return (
+                        <tr
+                          key={model.id}
+                          className={`leaderboard-table-row ${
+                            isSelected ? "leaderboard-table-row--selected" : ""
+                          }`}
+                          aria-selected={isSelected}
+                          tabIndex={0}
+                          onClick={() => {
+                            setSelectedModelId(model.id);
+                            setPredictionState({ kind: "idle" });
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelectedModelId(model.id);
+                              setPredictionState({ kind: "idle" });
+                            }
+                          }}
+                        >
+                          <th scope="row">
+                            <div className="leaderboard-model-cell">
+                              <span className="leaderboard-rank">
+                                #{index + 1}
+                              </span>
+                              <div className="leaderboard-model-copy">
+                                <span className="leaderboard-name">
+                                  {model.name}
+                                </span>
+                                <span className="leaderboard-subline">
+                                  Built-in
+                                </span>
+                              </div>
+                            </div>
+                          </th>
+                          <td>
+                            {formatMetric(model.metrics?.accuracy, "percent")}
+                          </td>
+                          <td>
+                            {formatMetric(model.metrics?.macro_f1, "percent")}
+                          </td>
+                          <td>
+                            {formatMetric(
+                              model.metrics?.avg_inference_ms,
+                              "ms",
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
               <p className="status-copy">
-                The backend is reachable, the shipped-model registry is online,
-                and the leaderboard can drive both model inspection and live
-                predictions.
+                {bootstrapState.kind === "loading"
+                  ? "The model leaderboard will populate after the backend finishes bootstrapping."
+                  : "The model leaderboard is unavailable until the backend responds."}
               </p>
-              <dl className="details-grid">
-                <div>
-                  <dt>Storage root</dt>
-                  <dd>{bootstrapState.health.storage.root}</dd>
-                </div>
-                <div>
-                  <dt>Directories</dt>
-                  <dd>
-                    {bootstrapState.health.storage.directories.join(", ")}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Loaded models</dt>
-                  <dd>{bootstrapState.models.length}</dd>
-                </div>
-              </dl>
-              <label className="field-label" htmlFor="model-select">
-                Built-in model
-              </label>
-              <select
-                id="model-select"
-                className="model-select"
-                value={selectedModelId}
-                onChange={(event) => {
-                  setSelectedModelId(event.target.value);
-                  setPredictionState({ kind: "idle" });
-                }}
-              >
-                {bootstrapState.models.map((model) => (
+            )}
+          </section>
+        </div>
+
+        <section className="prediction-card" aria-live="polite">
+          <div className="model-picker-block">
+            <label className="field-label" htmlFor="model-select">
+              Model
+            </label>
+            <select
+              id="model-select"
+              className="model-select"
+              disabled={!canChooseModel}
+              value={canChooseModel ? selectedModelId : ""}
+              onChange={(event) => {
+                setSelectedModelId(event.target.value);
+                setPredictionState({ kind: "idle" });
+              }}
+            >
+              {!canChooseModel ? (
+                <option value="">
+                  {bootstrapState.kind === "loading"
+                    ? "Loading models"
+                    : bootstrapState.kind === "error"
+                      ? "Backend unavailable"
+                      : "No models available"}
+                </option>
+              ) : (
+                bootstrapState.models.map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.name}
                   </option>
-                ))}
-              </select>
-              {selectedModel?.description ? (
-                <p className="helper-copy">{selectedModel.description}</p>
-              ) : null}
-
-              <section className="leaderboard-panel" aria-labelledby="leaderboard-heading">
-                <div className="panel-heading panel-heading--tight">
-                  <div>
-                    <p className="panel-kicker">Shipped leaderboard</p>
-                    <h2 id="leaderboard-heading">Compare built-in entries</h2>
-                  </div>
-                  <div className="sort-control">
-                    <label className="field-label" htmlFor="leaderboard-sort">
-                      Sort leaderboard by
-                    </label>
-                    <select
-                      id="leaderboard-sort"
-                      className="model-select"
-                      value={leaderboardMetric}
-                      onChange={(event) => {
-                        setLeaderboardMetric(event.target.value as SortableMetricKey);
-                      }}
-                    >
-                      <option value="accuracy">Accuracy</option>
-                      <option value="macro_f1">Macro F1</option>
-                      <option value="avg_inference_ms">Inference latency</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div
-                  className="leaderboard-list"
-                  role="list"
-                  aria-label="Shipped model leaderboard"
-                >
-                  {sortedModels.map((model) => (
-                    <button
-                      key={model.id}
-                      type="button"
-                      className={`leaderboard-row ${
-                        model.id === selectedModelId ? "leaderboard-row--selected" : ""
-                      }`}
-                      aria-pressed={model.id === selectedModelId}
-                      onClick={() => {
-                        setSelectedModelId(model.id);
-                        setPredictionState({ kind: "idle" });
-                      }}
-                    >
-                      <div className="leaderboard-name-row">
-                        <span className="leaderboard-name">{model.name}</span>
-                        <span className="kind-badge">Built-in</span>
-                      </div>
-                      <div className="leaderboard-metrics">
-                        <span>
-                          Accuracy {formatMetric(model.metrics?.accuracy, "percent")}
-                        </span>
-                        <span>
-                          Macro F1 {formatMetric(model.metrics?.macro_f1, "percent")}
-                        </span>
-                        <span>
-                          Latency {formatMetric(model.metrics?.avg_inference_ms, "ms")}
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            </>
-          ) : null}
-        </section>
-
-        <section className="board-card">
-          <div className="panel-heading">
-            <div>
-              <p className="panel-kicker">Input canvas</p>
-              <h2>Paint a digit sample</h2>
-            </div>
-            <div className="control-row">
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={handleClearBoard}
-              >
-                Clear board
-              </button>
-              <button
-                className="primary-button"
-                type="button"
-                disabled={
-                  bootstrapState.kind !== "ready" ||
-                  !selectedModelId ||
-                  !hasInk ||
-                  predictionState.kind === "loading"
-                }
-                onClick={() => {
-                  void handlePredict();
-                }}
-              >
-                {predictionState.kind === "loading"
-                  ? "Scoring digit"
-                  : "Run prediction"}
-              </button>
-            </div>
+                ))
+              )}
+            </select>
+            {bootstrapState.kind === "ready" && selectedModel?.description ? (
+              <p className="helper-copy">{selectedModel.description}</p>
+            ) : null}
           </div>
 
-          <p className="status-copy">
-            Click or drag across the board. The frontend sends the raw pixel
-            grid and the backend performs centering and scale normalization.
-          </p>
-
-          <div
-            className="drawing-frame"
-            onPointerLeave={() => setIsPainting(false)}
-          >
-            <div
-              className="drawing-grid"
-              role="grid"
-              aria-label="Digit drawing board"
-            >
-              {canvasPixels.map((pixel, index) => {
-                const row = Math.floor(index / DRAWING_GRID_SIZE);
-                const column = index % DRAWING_GRID_SIZE;
-
-                return (
-                  <button
-                    key={index}
-                    aria-label={`Paint row ${row + 1} column ${column + 1}`}
-                    aria-pressed={pixel > 0}
-                    className={`pixel-button ${
-                      pixel > 0 ? "pixel-button--active" : ""
-                    }`}
-                    type="button"
-                    onClick={() => handlePaint(index)}
-                    onPointerDown={(event) => {
-                      event.preventDefault();
-                      setIsPainting(true);
-                      handlePaint(index);
-                    }}
-                    onPointerEnter={() => {
-                      if (isPainting) {
-                        handlePaint(index);
-                      }
-                    }}
-                    onPointerUp={() => setIsPainting(false)}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
-        <section className="prediction-card" aria-live="polite">
           <div className="panel-heading">
             <div>
               <p className="panel-kicker">Model details</p>
-              <h2>{selectedModel?.name ?? "Select a built-in model"}</h2>
+              <h2>{selectedModel?.name ?? "Select a model"}</h2>
             </div>
-            {selectedModel ? <span className="kind-badge">Built-in</span> : null}
+            {selectedModel ? (
+              <span className="kind-badge">Built-in</span>
+            ) : null}
           </div>
 
           {selectedModel ? (
             <>
-              {selectedModel.description ? (
-                <p className="status-copy">{selectedModel.description}</p>
-              ) : null}
-
               <dl className="details-grid details-grid--compact">
                 <div>
                   <dt>Dataset source</dt>
@@ -487,9 +873,7 @@ export function App() {
                 </div>
                 <div>
                   <dt>Dataset sizes</dt>
-                  <dd>
-                    {formatDatasetSizes(selectedModel.dataset)}
-                  </dd>
+                  <dd>{formatDatasetSizes(selectedModel.dataset)}</dd>
                 </div>
                 <div>
                   <dt>Input shape</dt>
@@ -510,26 +894,41 @@ export function App() {
                 <dl className="details-grid details-grid--compact">
                   <div>
                     <dt>Accuracy</dt>
-                    <dd>{formatMetric(selectedModel.metrics?.accuracy, "percent")}</dd>
+                    <dd>
+                      {formatMetric(selectedModel.metrics?.accuracy, "percent")}
+                    </dd>
                   </div>
                   <div>
                     <dt>Macro precision</dt>
                     <dd>
-                      {formatMetric(selectedModel.metrics?.macro_precision, "percent")}
+                      {formatMetric(
+                        selectedModel.metrics?.macro_precision,
+                        "percent",
+                      )}
                     </dd>
                   </div>
                   <div>
                     <dt>Macro recall</dt>
-                    <dd>{formatMetric(selectedModel.metrics?.macro_recall, "percent")}</dd>
+                    <dd>
+                      {formatMetric(
+                        selectedModel.metrics?.macro_recall,
+                        "percent",
+                      )}
+                    </dd>
                   </div>
                   <div>
                     <dt>Macro F1</dt>
-                    <dd>{formatMetric(selectedModel.metrics?.macro_f1, "percent")}</dd>
+                    <dd>
+                      {formatMetric(selectedModel.metrics?.macro_f1, "percent")}
+                    </dd>
                   </div>
                   <div>
                     <dt>Inference latency</dt>
                     <dd>
-                      {formatMetric(selectedModel.metrics?.avg_inference_ms, "ms")}
+                      {formatMetric(
+                        selectedModel.metrics?.avg_inference_ms,
+                        "ms",
+                      )}
                     </dd>
                   </div>
                 </dl>
@@ -595,7 +994,10 @@ export function App() {
                 <div className="sample-grid">
                   {(selectedModel.evaluation?.sample_predictions ?? []).map(
                     (sample, index) => (
-                      <article className="sample-card" key={`${sample.label}-${index}`}>
+                      <article
+                        className="sample-card"
+                        key={`${sample.label}-${index}`}
+                      >
                         <span className="sample-chip">
                           Actual {sample.label} predicted {sample.predicted}
                         </span>
@@ -608,8 +1010,8 @@ export function App() {
             </>
           ) : (
             <p className="status-copy">
-              Select a shipped model from the leaderboard to inspect its
-              metadata and evaluation details.
+              Select a model from the leaderboard to inspect its metadata and
+              evaluation details.
             </p>
           )}
 
@@ -624,8 +1026,8 @@ export function App() {
 
           {predictionState.kind === "idle" ? (
             <p className="status-copy">
-              Paint a digit and run the selected shipped model to see the
-              predicted class and the full digit confidence spread.
+              Paint a digit and run the selected model to see the predicted
+              class and the full digit confidence spread.
             </p>
           ) : null}
 
@@ -637,7 +1039,7 @@ export function App() {
 
           {predictionState.kind === "loading" ? (
             <p className="status-copy">
-              Normalizing the sketch and scoring it against the shipped model.
+              Normalizing the sketch and scoring it against the selected model.
             </p>
           ) : null}
 
@@ -704,6 +1106,38 @@ function formatConfidence(value: number) {
   return `${Math.round(value * 100)}%`;
 }
 
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function readTextFromFile(file: File) {
+  if (typeof file.text === "function") {
+    return file.text();
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Could not read the selected CSV file."));
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error("Could not read the selected CSV file."));
+    };
+
+    reader.readAsText(file);
+  });
+}
+
+function toSplitRatio(value: number) {
+  return value / 100;
+}
+
 function compareModels(
   leftModel: ModelSummary,
   rightModel: ModelSummary,
@@ -713,10 +1147,14 @@ function compareModels(
   const rightValue = getMetricValue(rightModel, metric);
 
   if (metric === "avg_inference_ms") {
-    return leftValue - rightValue || leftModel.name.localeCompare(rightModel.name);
+    return (
+      leftValue - rightValue || leftModel.name.localeCompare(rightModel.name)
+    );
   }
 
-  return rightValue - leftValue || leftModel.name.localeCompare(rightModel.name);
+  return (
+    rightValue - leftValue || leftModel.name.localeCompare(rightModel.name)
+  );
 }
 
 function getMetricValue(model: ModelSummary, metric: SortableMetricKey) {

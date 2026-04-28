@@ -12,6 +12,7 @@ from backend.app.reference_model import (
     list_reference_models,
     predict_reference_digit,
 )
+from backend.app.training_csv import preview_training_csv
 
 STORAGE_DIRECTORIES = ["shipped-models", "custom-models", "registry"]
 
@@ -35,6 +36,29 @@ class CanvasPayload(BaseModel):
 class PredictionRequest(BaseModel):
     model_id: str = Field(min_length=1)
     canvas: CanvasPayload
+
+
+class TrainingSplitPayload(BaseModel):
+    train_ratio: float = Field(ge=0, le=1)
+    validation_ratio: float = Field(ge=0, le=1)
+    test_ratio: float = Field(ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_total_ratio(self) -> "TrainingSplitPayload":
+        total_ratio = self.train_ratio + self.validation_ratio + self.test_ratio
+        if abs(total_ratio - 1.0) > 1e-6:
+            raise ValueError("Split ratios must add up to 1.0.")
+
+        if self.train_ratio <= 0:
+            raise ValueError("Training split must be greater than zero.")
+
+        return self
+
+
+class TrainingCsvPreviewRequest(BaseModel):
+    file_name: str = Field(min_length=1)
+    csv_text: str = Field(min_length=1)
+    split: TrainingSplitPayload
 
 
 def ensure_storage_structure(storage_root: Path) -> list[str]:
@@ -95,6 +119,19 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             )
         except KeyError as error:
             raise HTTPException(status_code=404, detail=error.args[0]) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/training/csv-preview")
+    def training_csv_preview(request: TrainingCsvPreviewRequest) -> dict[str, object]:
+        try:
+            return preview_training_csv(
+                file_name=request.file_name,
+                csv_text=request.csv_text,
+                train_ratio=request.split.train_ratio,
+                validation_ratio=request.split.validation_ratio,
+                test_ratio=request.split.test_ratio,
+            )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
