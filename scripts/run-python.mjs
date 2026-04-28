@@ -15,22 +15,32 @@ function resolvePythonCommand() {
   ];
 
   for (const candidate of candidates) {
-    const result = spawnSync(candidate.command, [...candidate.prefixArgs, "--version"], {
-      stdio: "ignore",
-    });
+    const result = spawnSync(
+      candidate.command,
+      [...candidate.prefixArgs, "--version"],
+      {
+        stdio: "ignore",
+      },
+    );
 
     if (!result.error && result.status === 0) {
       return candidate;
     }
   }
 
-  throw new Error("Python 3 was not found. Create .venv or install Python and rerun the command.");
+  throw new Error(
+    "Python 3 was not found. Create .venv or install Python and rerun the command.",
+  );
 }
 
 const python = resolvePythonCommand();
-const child = spawn(python.command, [...python.prefixArgs, ...process.argv.slice(2)], {
-  stdio: "inherit",
-});
+const child = spawn(
+  python.command,
+  [...python.prefixArgs, ...process.argv.slice(2)],
+  {
+    stdio: "inherit",
+  },
+);
 
 child.on("error", (error) => {
   console.error(error.message);

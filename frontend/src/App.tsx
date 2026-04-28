@@ -45,7 +45,8 @@ export function App() {
 
         setViewState({
           kind: "error",
-          message: error instanceof Error ? error.message : "Backend check failed.",
+          message:
+            error instanceof Error ? error.message : "Backend check failed.",
         });
       }
     }
@@ -70,8 +71,9 @@ export function App() {
         <p className="eyebrow">MNIST shell</p>
         <h1>Bootable app shell</h1>
         <p className="summary">
-          This first slice wires a Windows-friendly startup path, a Python backend status
-          endpoint, and a React frontend that verifies the API is reachable.
+          This first slice wires a Windows-friendly startup path, a Python
+          backend status endpoint, and a React frontend that verifies the API is
+          reachable.
         </p>
       </section>
 
@@ -89,23 +91,29 @@ export function App() {
             {readinessLabel}
           </span>
           <span className="service-name">
-            {viewState.kind === "ready" ? viewState.payload.service : "mnist-backend"}
+            {viewState.kind === "ready"
+              ? viewState.payload.service
+              : "mnist-backend"}
           </span>
         </div>
 
         {viewState.kind === "loading" ? (
-          <p className="status-copy">Checking backend status and storage bootstrap.</p>
+          <p className="status-copy">
+            Checking backend status and storage bootstrap.
+          </p>
         ) : null}
 
         {viewState.kind === "error" ? (
-          <p className="status-copy">The frontend could not reach the backend: {viewState.message}</p>
+          <p className="status-copy">
+            The frontend could not reach the backend: {viewState.message}
+          </p>
         ) : null}
 
         {viewState.kind === "ready" ? (
           <>
             <p className="status-copy">
-              The backend responded successfully and prepared the project-local storage
-              layout for the next implementation slices.
+              The backend responded successfully and prepared the project-local
+              storage layout for the next implementation slices.
             </p>
             <dl className="details-grid">
               <div>

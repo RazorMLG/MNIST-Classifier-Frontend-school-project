@@ -1,8 +1,16 @@
 :root {
   color: #f4efe8;
   background:
-    radial-gradient(circle at top left, rgba(246, 163, 45, 0.28), transparent 35%),
-    radial-gradient(circle at bottom right, rgba(37, 125, 178, 0.26), transparent 30%),
+    radial-gradient(
+      circle at top left,
+      rgba(246, 163, 45, 0.28),
+      transparent 35%
+    ),
+    radial-gradient(
+      circle at bottom right,
+      rgba(37, 125, 178, 0.26),
+      transparent 30%
+    ),
     linear-gradient(135deg, #10212d 0%, #173d4c 55%, #2d5a45 100%);
   font-family: "Bahnschrift", "Aptos", "Segoe UI", sans-serif;
 }

@@ -31,6 +31,8 @@ describe("App", () => {
     expect(await screen.findByText("Backend ready")).toBeInTheDocument();
 
     expect(fetchMock).toHaveBeenCalledWith("/api/health");
-    expect(screen.getByText(/O:\/Projects\/MNIST Projekat\/data/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/O:\/Projects\/MNIST Projekat\/data/i),
+    ).toBeInTheDocument();
   });
 });
