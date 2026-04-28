@@ -1,0 +1,14 @@
+{
+  "name": "mnist-projekat",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n backend,frontend \"node scripts/run-python.mjs -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000\" \"npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173\"",
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "node scripts/run-python.mjs -m pytest backend/tests",
+    "test:frontend": "npm --prefix frontend run test -- --run",
+    "typecheck": "npm --prefix frontend run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
