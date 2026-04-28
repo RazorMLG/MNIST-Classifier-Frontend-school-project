@@ -38,7 +38,10 @@ body {
 .workspace-grid {
   display: grid;
   gap: 1.5rem;
-  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.15fr) minmax(280px, 0.95fr);
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.15fr) minmax(
+      280px,
+      0.95fr
+    );
 }
 
 .hero-panel,
@@ -200,6 +203,15 @@ body {
   font-size: 1.4rem;
 }
 
+.panel-heading h3 {
+  margin: 0.3rem 0 0;
+  font-size: 1.05rem;
+}
+
+.panel-heading--tight {
+  align-items: end;
+}
+
 .control-row {
   display: flex;
   gap: 0.75rem;
@@ -277,6 +289,195 @@ body {
   line-height: 1;
 }
 
+.leaderboard-panel,
+.detail-block,
+.detail-section {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.sort-control {
+  display: grid;
+  gap: 0.45rem;
+  min-width: min(100%, 13rem);
+}
+
+.leaderboard-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.leaderboard-row {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1.1rem;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem;
+  text-align: left;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.leaderboard-row:hover {
+  transform: translateY(-1px);
+  border-color: rgba(240, 196, 109, 0.4);
+}
+
+.leaderboard-row--selected {
+  background: rgba(240, 196, 109, 0.1);
+  border-color: rgba(240, 196, 109, 0.5);
+}
+
+.leaderboard-name-row,
+.details-topline {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.leaderboard-name {
+  color: #f7f1e7;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.kind-badge {
+  background: rgba(77, 183, 181, 0.15);
+  border: 1px solid rgba(77, 183, 181, 0.32);
+  border-radius: 999px;
+  color: #8fe2de;
+  display: inline-flex;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.35rem 0.7rem;
+  text-transform: uppercase;
+}
+
+.leaderboard-metrics,
+.parameter-grid,
+.sample-grid,
+.tag-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.leaderboard-metrics span,
+.parameter-chip,
+.sample-chip,
+.metric-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  color: rgba(244, 239, 232, 0.88);
+  font-size: 0.88rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.metric-chip--active {
+  background: rgba(240, 196, 109, 0.18);
+  color: #f5cf84;
+}
+
+.details-grid--compact {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.metric-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  margin: 0;
+}
+
+.metric-card,
+.tag-card,
+.sample-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  padding: 0.95rem;
+}
+
+.metric-card dt,
+.tag-label {
+  color: rgba(244, 239, 232, 0.62);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.metric-card dd,
+.tag-card strong,
+.sample-card strong {
+  color: #f7f1e7;
+  display: block;
+  font-size: 1.05rem;
+  margin: 0.4rem 0 0;
+}
+
+.matrix-frame {
+  background: rgba(3, 10, 16, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  overflow-x: auto;
+}
+
+.matrix-table {
+  border-collapse: collapse;
+  min-width: 34rem;
+  width: 100%;
+}
+
+.matrix-table th,
+.matrix-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: #f7f1e7;
+  font-variant-numeric: tabular-nums;
+  padding: 0.55rem;
+  text-align: center;
+}
+
+.matrix-table thead th {
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.matrix-table tbody th {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sample-list {
+  display: grid;
+  gap: 0.7rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sample-list li {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  color: #f7f1e7;
+  padding: 0.85rem 1rem;
+}
+
+.section-divider {
+  background: rgba(255, 255, 255, 0.08);
+  height: 1px;
+  width: 100%;
+}
+
 .confidence-grid {
   display: grid;
   gap: 0.8rem;
@@ -334,5 +535,15 @@ body {
 
   .drawing-grid {
     gap: 0.12rem;
+  }
+
+  .leaderboard-name-row,
+  .details-topline,
+  .panel-heading--tight {
+    align-items: start;
+  }
+
+  .matrix-table {
+    min-width: 28rem;
   }
 }

@@ -62,3 +62,9 @@ def test_models_lists_the_reference_model(tmp_path: Path) -> None:
     assert len(body["models"]) == 1
     assert body["models"][0]["id"] == "reference-prototype-v1"
     assert body["models"][0]["kind"] == "built-in"
+    assert body["models"][0]["metrics"]["accuracy"] > 0
+    assert body["models"][0]["dataset"]["source"] == "MNIST benchmark split"
+    assert body["models"][0]["trained_at"]
+    assert body["models"][0]["hyperparameters"]["prototype_grid_size"] == 20
+    assert len(body["models"][0]["evaluation"]["confusion_matrix"]) == 10
+    assert body["models"][0]["evaluation"]["sample_predictions"][0]["predicted"] == 1

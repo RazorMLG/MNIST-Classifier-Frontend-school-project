@@ -5,6 +5,10 @@ import "./App.css";
 const DRAWING_GRID_SIZE = 20;
 const DRAWING_PIXEL_COUNT = DRAWING_GRID_SIZE * DRAWING_GRID_SIZE;
 
+const SORTABLE_METRICS = ["accuracy", "macro_f1", "avg_inference_ms"] as const;
+
+type SortableMetricKey = (typeof SORTABLE_METRICS)[number];
+
 type HealthPayload = {
   status: string;
   service: string;
@@ -15,12 +19,44 @@ type HealthPayload = {
   };
 };
 
+type ModelMetrics = {
+  accuracy?: number;
+  macro_precision?: number;
+  macro_recall?: number;
+  macro_f1?: number;
+  avg_inference_ms?: number;
+};
+
+type ModelDataset = {
+  source?: string;
+  image_shape?: string;
+  train_examples?: number;
+  validation_examples?: number;
+  test_examples?: number;
+};
+
+type SamplePrediction = {
+  label: number;
+  predicted: number;
+  confidence: number;
+};
+
+type ModelEvaluation = {
+  confusion_matrix?: number[][];
+  sample_predictions?: SamplePrediction[];
+};
+
 type ModelSummary = {
   id: string;
   name: string;
   kind: string;
   family?: string;
   description?: string;
+  trained_at?: string;
+  metrics?: ModelMetrics;
+  dataset?: ModelDataset;
+  hyperparameters?: Record<string, number | string>;
+  evaluation?: ModelEvaluation;
   input?: {
     width: number;
     height: number;
@@ -58,6 +94,8 @@ export function App() {
   const [bootstrapState, setBootstrapState] = useState<BootstrapState>({
     kind: "loading",
   });
+  const [leaderboardMetric, setLeaderboardMetric] =
+    useState<SortableMetricKey>("accuracy");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [canvasPixels, setCanvasPixels] = useState<number[]>(() =>
     createBlankCanvas(),
@@ -119,6 +157,12 @@ export function App() {
     bootstrapState.kind === "ready"
       ? bootstrapState.models.find((model) => model.id === selectedModelId)
       : undefined;
+  const sortedModels =
+    bootstrapState.kind === "ready"
+      ? [...bootstrapState.models].sort((leftModel, rightModel) =>
+          compareModels(leftModel, rightModel, leaderboardMetric),
+        )
+      : [];
 
   const readinessLabel =
     bootstrapState.kind === "ready" && bootstrapState.health.storage.ready
@@ -184,12 +228,12 @@ export function App() {
   return (
     <main className="app-shell">
       <section className="hero-panel">
-        <p className="eyebrow">MNIST reference slice</p>
-        <h1>Draw a digit. Score it end to end.</h1>
+        <p className="eyebrow">MNIST shipped models</p>
+        <h1>Inspect leaderboard metadata. Score a digit live.</h1>
         <p className="summary">
-          This tracer bullet keeps the shell bootable while adding one shipped
-          reference model, raw drawing input, backend preprocessing, and a live
-          confidence readout for digits 0 through 9.
+          This tracer bullet keeps the app bootable while exposing shipped model
+          metrics, dataset lineage, and detail metadata in the UI, then reuses
+          the selected built-in model for the existing prediction flow.
         </p>
       </section>
 
@@ -216,7 +260,7 @@ export function App() {
 
           {bootstrapState.kind === "loading" ? (
             <p className="status-copy">
-              Checking backend status and loading the shipped reference model.
+              Checking backend status and loading shipped model metadata.
             </p>
           ) : null}
 
@@ -230,8 +274,8 @@ export function App() {
             <>
               <p className="status-copy">
                 The backend is reachable, the shipped-model registry is online,
-                and this slice can send raw drawing pixels into the prediction
-                contract.
+                and the leaderboard can drive both model inspection and live
+                predictions.
               </p>
               <dl className="details-grid">
                 <div>
@@ -240,7 +284,9 @@ export function App() {
                 </div>
                 <div>
                   <dt>Directories</dt>
-                  <dd>{bootstrapState.health.storage.directories.join(", ")}</dd>
+                  <dd>
+                    {bootstrapState.health.storage.directories.join(", ")}
+                  </dd>
                 </div>
                 <div>
                   <dt>Loaded models</dt>
@@ -268,6 +314,69 @@ export function App() {
               {selectedModel?.description ? (
                 <p className="helper-copy">{selectedModel.description}</p>
               ) : null}
+
+              <section className="leaderboard-panel" aria-labelledby="leaderboard-heading">
+                <div className="panel-heading panel-heading--tight">
+                  <div>
+                    <p className="panel-kicker">Shipped leaderboard</p>
+                    <h2 id="leaderboard-heading">Compare built-in entries</h2>
+                  </div>
+                  <div className="sort-control">
+                    <label className="field-label" htmlFor="leaderboard-sort">
+                      Sort leaderboard by
+                    </label>
+                    <select
+                      id="leaderboard-sort"
+                      className="model-select"
+                      value={leaderboardMetric}
+                      onChange={(event) => {
+                        setLeaderboardMetric(event.target.value as SortableMetricKey);
+                      }}
+                    >
+                      <option value="accuracy">Accuracy</option>
+                      <option value="macro_f1">Macro F1</option>
+                      <option value="avg_inference_ms">Inference latency</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div
+                  className="leaderboard-list"
+                  role="list"
+                  aria-label="Shipped model leaderboard"
+                >
+                  {sortedModels.map((model) => (
+                    <button
+                      key={model.id}
+                      type="button"
+                      className={`leaderboard-row ${
+                        model.id === selectedModelId ? "leaderboard-row--selected" : ""
+                      }`}
+                      aria-pressed={model.id === selectedModelId}
+                      onClick={() => {
+                        setSelectedModelId(model.id);
+                        setPredictionState({ kind: "idle" });
+                      }}
+                    >
+                      <div className="leaderboard-name-row">
+                        <span className="leaderboard-name">{model.name}</span>
+                        <span className="kind-badge">Built-in</span>
+                      </div>
+                      <div className="leaderboard-metrics">
+                        <span>
+                          Accuracy {formatMetric(model.metrics?.accuracy, "percent")}
+                        </span>
+                        <span>
+                          Macro F1 {formatMetric(model.metrics?.macro_f1, "percent")}
+                        </span>
+                        <span>
+                          Latency {formatMetric(model.metrics?.avg_inference_ms, "ms")}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
             </>
           ) : null}
         </section>
@@ -315,7 +424,11 @@ export function App() {
             className="drawing-frame"
             onPointerLeave={() => setIsPainting(false)}
           >
-            <div className="drawing-grid" role="grid" aria-label="Digit drawing board">
+            <div
+              className="drawing-grid"
+              role="grid"
+              aria-label="Digit drawing board"
+            >
               {canvasPixels.map((pixel, index) => {
                 const row = Math.floor(index / DRAWING_GRID_SIZE);
                 const column = index % DRAWING_GRID_SIZE;
@@ -351,15 +464,168 @@ export function App() {
         <section className="prediction-card" aria-live="polite">
           <div className="panel-heading">
             <div>
+              <p className="panel-kicker">Model details</p>
+              <h2>{selectedModel?.name ?? "Select a built-in model"}</h2>
+            </div>
+            {selectedModel ? <span className="kind-badge">Built-in</span> : null}
+          </div>
+
+          {selectedModel ? (
+            <>
+              {selectedModel.description ? (
+                <p className="status-copy">{selectedModel.description}</p>
+              ) : null}
+
+              <dl className="details-grid details-grid--compact">
+                <div>
+                  <dt>Dataset source</dt>
+                  <dd>{selectedModel.dataset?.source ?? "Pending"}</dd>
+                </div>
+                <div>
+                  <dt>Trained at</dt>
+                  <dd>{formatTimestamp(selectedModel.trained_at)}</dd>
+                </div>
+                <div>
+                  <dt>Dataset sizes</dt>
+                  <dd>
+                    {formatDatasetSizes(selectedModel.dataset)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Input shape</dt>
+                  <dd>
+                    {selectedModel.dataset?.image_shape ??
+                      formatInputShape(selectedModel.input)}
+                  </dd>
+                </div>
+              </dl>
+
+              <section className="detail-block">
+                <div className="panel-heading panel-heading--tight">
+                  <div>
+                    <p className="panel-kicker">Metrics</p>
+                    <h3>Leaderboard metrics</h3>
+                  </div>
+                </div>
+                <dl className="details-grid details-grid--compact">
+                  <div>
+                    <dt>Accuracy</dt>
+                    <dd>{formatMetric(selectedModel.metrics?.accuracy, "percent")}</dd>
+                  </div>
+                  <div>
+                    <dt>Macro precision</dt>
+                    <dd>
+                      {formatMetric(selectedModel.metrics?.macro_precision, "percent")}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Macro recall</dt>
+                    <dd>{formatMetric(selectedModel.metrics?.macro_recall, "percent")}</dd>
+                  </div>
+                  <div>
+                    <dt>Macro F1</dt>
+                    <dd>{formatMetric(selectedModel.metrics?.macro_f1, "percent")}</dd>
+                  </div>
+                  <div>
+                    <dt>Inference latency</dt>
+                    <dd>
+                      {formatMetric(selectedModel.metrics?.avg_inference_ms, "ms")}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section className="detail-block">
+                <div className="panel-heading panel-heading--tight">
+                  <div>
+                    <p className="panel-kicker">Hyperparameters</p>
+                    <h3>Reference configuration</h3>
+                  </div>
+                </div>
+                <div className="tag-grid">
+                  {Object.entries(selectedModel.hyperparameters ?? {}).map(
+                    ([key, value]) => (
+                      <div className="tag-card" key={key}>
+                        <span className="tag-label">{formatKeyLabel(key)}</span>
+                        <strong>{String(value)}</strong>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </section>
+
+              <section className="detail-block">
+                <div className="panel-heading panel-heading--tight">
+                  <div>
+                    <p className="panel-kicker">Confusion matrix</p>
+                    <h3>Evaluation breakdown</h3>
+                  </div>
+                </div>
+                <div className="matrix-frame">
+                  <table className="matrix-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Actual\\Pred</th>
+                        {renderDigitHeaders()}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selectedModel.evaluation?.confusion_matrix ?? []).map(
+                        (row, rowIndex) => (
+                          <tr key={rowIndex}>
+                            <th scope="row">{rowIndex}</th>
+                            {row.map((value, columnIndex) => (
+                              <td key={columnIndex}>{value}</td>
+                            ))}
+                          </tr>
+                        ),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="detail-block">
+                <div className="panel-heading panel-heading--tight">
+                  <div>
+                    <p className="panel-kicker">Sample predictions</p>
+                    <h3>Held-out examples</h3>
+                  </div>
+                </div>
+                <div className="sample-grid">
+                  {(selectedModel.evaluation?.sample_predictions ?? []).map(
+                    (sample, index) => (
+                      <article className="sample-card" key={`${sample.label}-${index}`}>
+                        <span className="sample-chip">
+                          Actual {sample.label} predicted {sample.predicted}
+                        </span>
+                        <strong>{formatConfidence(sample.confidence)}</strong>
+                      </article>
+                    ),
+                  )}
+                </div>
+              </section>
+            </>
+          ) : (
+            <p className="status-copy">
+              Select a shipped model from the leaderboard to inspect its
+              metadata and evaluation details.
+            </p>
+          )}
+
+          <div className="section-divider" />
+
+          <div className="panel-heading panel-heading--tight">
+            <div>
               <p className="panel-kicker">Prediction</p>
-              <h2>Confidence profile</h2>
+              <h3>Confidence profile</h3>
             </div>
           </div>
 
           {predictionState.kind === "idle" ? (
             <p className="status-copy">
-              Paint a digit and run the reference model to see the predicted
-              class and the full digit confidence spread.
+              Paint a digit and run the selected shipped model to see the
+              predicted class and the full digit confidence spread.
             </p>
           ) : null}
 
@@ -436,4 +702,104 @@ async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
 
 function formatConfidence(value: number) {
   return `${Math.round(value * 100)}%`;
+}
+
+function compareModels(
+  leftModel: ModelSummary,
+  rightModel: ModelSummary,
+  metric: SortableMetricKey,
+) {
+  const leftValue = getMetricValue(leftModel, metric);
+  const rightValue = getMetricValue(rightModel, metric);
+
+  if (metric === "avg_inference_ms") {
+    return leftValue - rightValue || leftModel.name.localeCompare(rightModel.name);
+  }
+
+  return rightValue - leftValue || leftModel.name.localeCompare(rightModel.name);
+}
+
+function getMetricValue(model: ModelSummary, metric: SortableMetricKey) {
+  const value = model.metrics?.[metric];
+
+  if (value == null) {
+    return metric === "avg_inference_ms"
+      ? Number.POSITIVE_INFINITY
+      : Number.NEGATIVE_INFINITY;
+  }
+
+  return value;
+}
+
+function formatMetric(value: number | undefined, mode: "percent" | "ms") {
+  if (value == null) {
+    return "n/a";
+  }
+
+  if (mode === "ms") {
+    return `${value.toFixed(1)} ms`;
+  }
+
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatTimestamp(value: string | undefined) {
+  if (!value) {
+    return "Pending";
+  }
+
+  return value.replace("T", " ").replace("Z", " UTC");
+}
+
+function formatDatasetSizes(dataset: ModelDataset | undefined) {
+  if (!dataset) {
+    return "Pending";
+  }
+
+  return [
+    `Train ${formatCount(dataset.train_examples)}`,
+    `Val ${formatCount(dataset.validation_examples)}`,
+    `Test ${formatCount(dataset.test_examples)}`,
+  ].join(" | ");
+}
+
+function formatCount(value: number | undefined) {
+  if (value == null) {
+    return "-";
+  }
+
+  return value.toLocaleString();
+}
+
+function formatInputShape(
+  input:
+    | {
+        width: number;
+        height: number;
+        encoding?: string;
+      }
+    | undefined,
+) {
+  if (!input) {
+    return "Pending";
+  }
+
+  return `${input.width}x${input.height}${
+    input.encoding ? ` ${input.encoding}` : ""
+  }`;
+}
+
+function formatKeyLabel(key: string) {
+  return key
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function renderDigitHeaders() {
+  return Array.from({ length: 10 }, (_, digit) => (
+    <th key={digit} scope="col">
+      {digit}
+    </th>
+  ));
 }
