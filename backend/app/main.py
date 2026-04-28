@@ -4,9 +4,37 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field, model_validator
+
+from backend.app.reference_model import (
+    ensure_reference_model_artifact,
+    list_reference_models,
+    predict_reference_digit,
+)
 
 STORAGE_DIRECTORIES = ["shipped-models", "custom-models", "registry"]
+
+
+class CanvasPayload(BaseModel):
+    width: int = Field(ge=1, le=64)
+    height: int = Field(ge=1, le=64)
+    pixels: list[float] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_pixels_length(self) -> "CanvasPayload":
+        expected_pixels = self.width * self.height
+        if len(self.pixels) != expected_pixels:
+            raise ValueError(
+                f"Canvas payload has {len(self.pixels)} pixels but expected {expected_pixels}."
+            )
+
+        return self
+
+
+class PredictionRequest(BaseModel):
+    model_id: str = Field(min_length=1)
+    canvas: CanvasPayload
 
 
 def ensure_storage_structure(storage_root: Path) -> list[str]:
@@ -14,6 +42,8 @@ def ensure_storage_structure(storage_root: Path) -> list[str]:
 
     for directory in STORAGE_DIRECTORIES:
         (storage_root / directory).mkdir(parents=True, exist_ok=True)
+
+    ensure_reference_model_artifact(storage_root / "shipped-models")
 
     return STORAGE_DIRECTORIES.copy()
 
@@ -45,6 +75,28 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
                 "directories": storage_directories,
             },
         }
+
+    @app.get("/api/models")
+    def models() -> dict[str, object]:
+        storage_root_path = getattr(app.state, "storage_root", resolved_storage_root)
+        return {"models": list_reference_models(storage_root_path)}
+
+    @app.post("/api/predict")
+    def predict(request: PredictionRequest) -> dict[str, object]:
+        storage_root_path = getattr(app.state, "storage_root", resolved_storage_root)
+
+        try:
+            return predict_reference_digit(
+                model_id=request.model_id,
+                width=request.canvas.width,
+                height=request.canvas.height,
+                pixels=request.canvas.pixels,
+                storage_root=storage_root_path,
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=error.args[0]) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     return app
 

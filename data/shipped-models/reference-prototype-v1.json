@@ -1,0 +1,18 @@
+{
+  "id": "reference-prototype-v1",
+  "name": "Reference Prototype",
+  "kind": "built-in",
+  "family": "prototype",
+  "version": "1.0.0",
+  "description": "Hand-authored stroke prototype classifier for the first end-to-end MNIST slice.",
+  "input": {
+    "width": 20,
+    "height": 20,
+    "encoding": "grayscale-intensity"
+  },
+  "preprocessing": {
+    "target_size": 28,
+    "content_box": 20,
+    "centering": "center-of-mass"
+  }
+}
