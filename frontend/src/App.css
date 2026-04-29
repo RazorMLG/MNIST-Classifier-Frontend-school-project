@@ -359,6 +359,12 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }
 
+.training-config-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
 .training-field {
   display: grid;
   gap: 0.45rem;
@@ -495,6 +501,72 @@ body {
   letter-spacing: 0.04em;
   padding: 0.35rem 0.7rem;
   text-transform: uppercase;
+}
+
+.kind-badge--custom {
+  background: rgba(240, 196, 109, 0.18);
+  border-color: rgba(240, 196, 109, 0.38);
+  color: #f5cf84;
+}
+
+.panel-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.secondary-button--compact {
+  padding: 0.6rem 0.95rem;
+}
+
+.warning-stack {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.warning-copy {
+  background: rgba(240, 196, 109, 0.1);
+  border: 1px solid rgba(240, 196, 109, 0.2);
+  border-radius: 1rem;
+  color: #f6ddb0;
+  margin: 0;
+  padding: 0.8rem 0.95rem;
+}
+
+.training-progress-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.95rem;
+}
+
+.training-progress-row {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.training-progress-row strong {
+  color: #f7f1e7;
+  font-variant-numeric: tabular-nums;
+}
+
+.training-progress-bar {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  height: 0.85rem;
+  overflow: hidden;
+}
+
+.training-progress-fill {
+  background: linear-gradient(90deg, #4db7b5 0%, #f0c46d 100%);
+  border-radius: 999px;
+  display: block;
+  height: 100%;
 }
 
 .parameter-grid,

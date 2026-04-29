@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "reference-prototype-v1",
+      "kind": "built-in",
+      "artifact_path": "shipped-models/reference-prototype-v1.json"
+    }
+  ]
+}

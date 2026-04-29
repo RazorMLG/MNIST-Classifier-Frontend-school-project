@@ -16,9 +16,10 @@ def preview_training_csv(
     validation_ratio: float,
     test_ratio: float,
 ) -> dict[str, object]:
-    example_count, label_range = validate_training_csv(csv_text)
+    training_rows = parse_training_csv_rows(csv_text)
+    labels = [label for label, _ in training_rows]
     split_counts = calculate_split_counts(
-        example_count=example_count,
+        example_count=len(training_rows),
         train_ratio=train_ratio,
         validation_ratio=validation_ratio,
         test_ratio=test_ratio,
@@ -27,9 +28,12 @@ def preview_training_csv(
     return {
         "file_name": file_name,
         "dataset": {
-            "example_count": example_count,
+            "example_count": len(training_rows),
             "feature_count": EXPECTED_FEATURE_COUNT,
-            "label_range": label_range,
+            "label_range": {
+                "min": min(labels),
+                "max": max(labels),
+            },
         },
         "split": {
             "ratios": {
@@ -42,7 +46,7 @@ def preview_training_csv(
     }
 
 
-def validate_training_csv(csv_text: str) -> tuple[int, dict[str, int]]:
+def parse_training_csv_rows(csv_text: str) -> list[tuple[int, list[int]]]:
     reader = csv.reader(StringIO(csv_text.strip()))
 
     try:
@@ -55,9 +59,7 @@ def validate_training_csv(csv_text: str) -> tuple[int, dict[str, int]]:
             "CSV schema must match the labeled MNIST training format: label,pixel0,...,pixel783."
         )
 
-    example_count = 0
-    min_label = 9
-    max_label = 0
+    parsed_rows: list[tuple[int, list[int]]] = []
 
     for row_index, row in enumerate(reader, start=2):
         if len(row) != len(EXPECTED_HEADER):
@@ -73,6 +75,7 @@ def validate_training_csv(csv_text: str) -> tuple[int, dict[str, int]]:
         if not 0 <= label <= 9:
             raise ValueError(f"Row {row_index} label must be between 0 and 9.")
 
+        pixels: list[int] = []
         for pixel_index, raw_value in enumerate(row[1:], start=0):
             try:
                 pixel = int(raw_value)
@@ -86,14 +89,20 @@ def validate_training_csv(csv_text: str) -> tuple[int, dict[str, int]]:
                     f"Row {row_index} pixel{pixel_index} must be an integer between 0 and 255."
                 )
 
-        example_count += 1
-        min_label = min(min_label, label)
-        max_label = max(max_label, label)
+            pixels.append(pixel)
 
-    if example_count == 0:
+        parsed_rows.append((label, pixels))
+
+    if not parsed_rows:
         raise ValueError("CSV file must include at least one labeled example.")
 
-    return example_count, {"min": min_label, "max": max_label}
+    return parsed_rows
+
+
+def validate_training_csv(csv_text: str) -> tuple[int, dict[str, int]]:
+    training_rows = parse_training_csv_rows(csv_text)
+    labels = [label for label, _ in training_rows]
+    return len(training_rows), {"min": min(labels), "max": max(labels)}
 
 
 def calculate_split_counts(

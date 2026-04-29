@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -372,7 +372,9 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /training mode/i }));
 
-    expect(screen.queryByRole("grid", { name: /digit drawing board/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("grid", { name: /digit drawing board/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByLabelText(/train split/i)).toHaveValue(80);
     expect(screen.getByLabelText(/validation split/i)).toHaveValue(10);
     expect(screen.getByLabelText(/test split/i)).toHaveValue(10);
@@ -386,7 +388,9 @@ describe("App", () => {
 
     fireEvent.change(screen.getByLabelText(/training csv/i), {
       target: {
-        files: [new File([makeTrainingCsv()], "train.csv", { type: "text/csv" })],
+        files: [
+          new File([makeTrainingCsv()], "train.csv", { type: "text/csv" }),
+        ],
       },
     });
 
@@ -460,7 +464,9 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /training mode/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /training mode/i }),
+    );
     fireEvent.change(screen.getByLabelText(/training csv/i), {
       target: {
         files: [
@@ -472,7 +478,311 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /preview split/i }));
 
     expect(
-      await screen.findByText(/csv preview failed: row 2 label must be between 0 and 9/i),
+      await screen.findByText(
+        /csv preview failed: row 2 label must be between 0 and 9/i,
+      ),
     ).toBeInTheDocument();
+  });
+
+  it("runs custom training through the shared leaderboard and model details flow", async () => {
+    let trainingCompleted = false;
+    let modelDeleted = false;
+    let jobPollCount = 0;
+    let trainingRequest: unknown = null;
+    let deletedModelPath = "";
+
+    const builtInModel = {
+      id: "reference-prototype-v1",
+      name: "Reference Prototype",
+      kind: "built-in",
+      description: "First shipped reference slice.",
+      trained_at: "2026-04-28T00:00:00Z",
+      metrics: {
+        accuracy: 0.912,
+        macro_precision: 0.914,
+        macro_recall: 0.912,
+        macro_f1: 0.911,
+        avg_inference_ms: 3.4,
+      },
+      dataset: {
+        source: "MNIST benchmark split",
+        image_shape: "28x28 grayscale",
+        train_examples: 60000,
+        validation_examples: 5000,
+        test_examples: 10000,
+      },
+      hyperparameters: {
+        prototype_grid_size: 20,
+        distance_metric: "stroke-overlap",
+      },
+      evaluation: {
+        confusion_matrix: Array.from({ length: 10 }, (_, row) =>
+          Array.from({ length: 10 }, (_, column) => (row === column ? 90 : 1)),
+        ),
+        sample_predictions: [{ label: 1, predicted: 1, confidence: 0.98 }],
+      },
+      input: { width: 20, height: 20 },
+    };
+
+    const customModel = {
+      id: "custom-classroom-prototype",
+      name: "Classroom Prototype",
+      kind: "custom",
+      description: "Custom prototype classifier trained from an uploaded MNIST CSV.",
+      trained_at: "2026-04-29T12:00:00Z",
+      metrics: {
+        accuracy: 0.954,
+        macro_precision: 0.953,
+        macro_recall: 0.954,
+        macro_f1: 0.952,
+        avg_inference_ms: 1.8,
+      },
+      dataset: {
+        source: "Uploaded CSV: classroom-train.csv",
+        image_shape: "28x28 grayscale",
+        train_examples: 24,
+        validation_examples: 3,
+        test_examples: 3,
+      },
+      hyperparameters: {
+        max_examples_per_label: 4,
+        prototype_blend: 0.35,
+        temperature: 18,
+      },
+      training: {
+        seed: 17,
+        config_snapshot: {
+          classifier: "reference-prototype",
+          file_name: "classroom-train.csv",
+          split: {
+            train_ratio: 0.8,
+            validation_ratio: 0.1,
+            test_ratio: 0.1,
+          },
+          hyperparameters: {
+            max_examples_per_label: 4,
+            prototype_blend: 0.35,
+            temperature: 18,
+          },
+        },
+      },
+      evaluation: {
+        confusion_matrix: Array.from({ length: 10 }, (_, row) =>
+          Array.from({ length: 10 }, (_, column) => (row === column ? 12 : 0)),
+        ),
+        sample_predictions: [{ label: 7, predicted: 7, confidence: 0.99 }],
+      },
+      input: { width: 20, height: 20 },
+    };
+
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (input === "/api/health") {
+          return {
+            ok: true,
+            json: async () => ({
+              status: "ok",
+              service: "mnist-backend",
+              storage: {
+                ready: true,
+                root: "O:/Projects/MNIST Projekat/data",
+                directories: ["shipped-models", "custom-models", "registry"],
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/models") {
+          return {
+            ok: true,
+            json: async () => ({
+              models: modelDeleted
+                ? [builtInModel]
+                : trainingCompleted
+                  ? [builtInModel, customModel]
+                  : [builtInModel],
+            }),
+          };
+        }
+
+        if (input === "/api/training/csv-preview") {
+          return {
+            ok: true,
+            json: async () => ({
+              file_name: "classroom-train.csv",
+              dataset: {
+                example_count: 30,
+                feature_count: 784,
+                label_range: { min: 0, max: 9 },
+              },
+              split: {
+                ratios: {
+                  train: 0.8,
+                  validation: 0.1,
+                  test: 0.1,
+                },
+                counts: {
+                  train: 24,
+                  validation: 3,
+                  test: 3,
+                },
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/training/jobs") {
+          trainingRequest = JSON.parse(String(init?.body));
+
+          return {
+            ok: true,
+            status: 202,
+            json: async () => ({
+              job: {
+                id: "job-1",
+                model_id: "custom-classroom-prototype",
+                model_name: "Classroom Prototype",
+                status: "running",
+                progress: {
+                  percent: 0.08,
+                  stage: "Validating dataset",
+                },
+                error: null,
+                started_at: "2026-04-29T12:00:00Z",
+                completed_at: null,
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/training/jobs/job-1") {
+          jobPollCount += 1;
+
+          if (jobPollCount === 1) {
+            return {
+              ok: true,
+              json: async () => ({
+                job: {
+                  id: "job-1",
+                  model_id: "custom-classroom-prototype",
+                  model_name: "Classroom Prototype",
+                  status: "running",
+                  progress: {
+                    percent: 0.6,
+                    stage: "Building digit prototypes",
+                  },
+                  error: null,
+                  started_at: "2026-04-29T12:00:00Z",
+                  completed_at: null,
+                },
+              }),
+            };
+          }
+
+          trainingCompleted = true;
+
+          return {
+            ok: true,
+            json: async () => ({
+              job: {
+                id: "job-1",
+                model_id: "custom-classroom-prototype",
+                model_name: "Classroom Prototype",
+                status: "completed",
+                progress: {
+                  percent: 1,
+                  stage: "Training complete",
+                },
+                error: null,
+                started_at: "2026-04-29T12:00:00Z",
+                completed_at: "2026-04-29T12:00:03Z",
+              },
+            }),
+          };
+        }
+
+        if (
+          input === "/api/models/custom-classroom-prototype" &&
+          init?.method === "DELETE"
+        ) {
+          deletedModelPath = String(input);
+          modelDeleted = true;
+
+          return {
+            ok: true,
+            status: 204,
+            json: async () => ({}),
+          };
+        }
+
+        throw new Error(`Unexpected fetch call: ${String(input)}`);
+      },
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /training mode/i }),
+    );
+
+    fireEvent.change(screen.getByLabelText(/model name/i), {
+      target: { value: "Classroom Prototype" },
+    });
+    fireEvent.change(screen.getByLabelText(/training csv/i), {
+      target: {
+        files: [
+          new File([makeTrainingCsv(30)], "classroom-train.csv", {
+            type: "text/csv",
+          }),
+        ],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /preview split/i }));
+
+    expect(await screen.findByText(/train 24 examples/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /start training/i }));
+
+    await waitFor(() => {
+      expect(trainingRequest).toMatchObject({
+        model_name: "Classroom Prototype",
+        seed: 17,
+        hyperparameters: {
+          max_examples_per_label: 4,
+          prototype_blend: 0.35,
+          temperature: 18,
+        },
+      });
+    });
+
+    expect(
+      await screen.findByText(/building digit prototypes/i),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/classroom prototype is now available in the shared model list/i),
+    ).toBeInTheDocument();
+
+    const leaderboard = screen.getByRole("table", {
+      name: /model leaderboard/i,
+    });
+
+    expect(
+      within(leaderboard).getByText(/classroom prototype/i),
+    ).toBeInTheDocument();
+    expect(within(leaderboard).getByText(/^custom$/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete custom model/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /delete custom model/i }));
+
+    expect(deletedModelPath).toBe("/api/models/custom-classroom-prototype");
+    expect(
+      await screen.findByText(/custom model deleted: classroom prototype/i),
+    ).toBeInTheDocument();
+    expect(
+      within(leaderboard).queryByText(/classroom prototype/i),
+    ).not.toBeInTheDocument();
   });
 });

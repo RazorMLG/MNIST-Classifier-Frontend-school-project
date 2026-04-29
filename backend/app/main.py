@@ -5,12 +5,20 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 
+from backend.app.custom_training import (
+    JobConflictError,
+    ModelConflictError,
+    ModelDeletionError,
+    TrainingJobManager,
+    delete_custom_model,
+    list_available_models,
+    predict_available_model,
+)
 from backend.app.reference_model import (
     ensure_reference_model_artifact,
-    list_reference_models,
-    predict_reference_digit,
 )
 from backend.app.training_csv import preview_training_csv
 
@@ -61,6 +69,28 @@ class TrainingCsvPreviewRequest(BaseModel):
     split: TrainingSplitPayload
 
 
+class ReferenceTrainingHyperparameters(BaseModel):
+    max_examples_per_label: int = Field(ge=1, le=5000)
+    prototype_blend: float = Field(ge=0, le=1)
+    temperature: float = Field(gt=0, le=40)
+
+
+class CustomTrainingRequest(BaseModel):
+    model_name: str = Field(min_length=3, max_length=80)
+    file_name: str = Field(min_length=1)
+    csv_text: str = Field(min_length=1)
+    split: TrainingSplitPayload
+    seed: int = Field(ge=0, le=1_000_000)
+    hyperparameters: ReferenceTrainingHyperparameters
+
+    @model_validator(mode="after")
+    def validate_model_name(self) -> "CustomTrainingRequest":
+        if not self.model_name.strip():
+            raise ValueError("Model name is required.")
+
+        return self
+
+
 def ensure_storage_structure(storage_root: Path) -> list[str]:
     storage_root.mkdir(parents=True, exist_ok=True)
 
@@ -81,7 +111,11 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.storage_root = resolved_storage_root
         app.state.storage_directories = ensure_storage_structure(resolved_storage_root)
-        yield
+        app.state.training_manager = TrainingJobManager(resolved_storage_root)
+        try:
+            yield
+        finally:
+            app.state.training_manager.shutdown()
 
     app = FastAPI(title="MNIST Classifier Backend", lifespan=lifespan)
 
@@ -103,14 +137,14 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     @app.get("/api/models")
     def models() -> dict[str, object]:
         storage_root_path = getattr(app.state, "storage_root", resolved_storage_root)
-        return {"models": list_reference_models(storage_root_path)}
+        return {"models": list_available_models(storage_root_path)}
 
     @app.post("/api/predict")
     def predict(request: PredictionRequest) -> dict[str, object]:
         storage_root_path = getattr(app.state, "storage_root", resolved_storage_root)
 
         try:
-            return predict_reference_digit(
+            return predict_available_model(
                 model_id=request.model_id,
                 width=request.canvas.width,
                 height=request.canvas.height,
@@ -134,6 +168,50 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/api/training/jobs", status_code=202)
+    def create_training_job(request: CustomTrainingRequest) -> dict[str, object]:
+        training_manager = getattr(app.state, "training_manager")
+
+        try:
+            job = training_manager.start_job(
+                model_name=request.model_name,
+                file_name=request.file_name,
+                csv_text=request.csv_text,
+                split=request.split.model_dump(),
+                seed=request.seed,
+                hyperparameters=request.hyperparameters.model_dump(),
+            )
+        except JobConflictError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except ModelConflictError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+        return {"job": job}
+
+    @app.get("/api/training/jobs/{job_id}")
+    def get_training_job(job_id: str) -> dict[str, object]:
+        training_manager = getattr(app.state, "training_manager")
+
+        try:
+            return {"job": training_manager.get_job(job_id)}
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=f"Unknown training job '{job_id}'.") from error
+
+    @app.delete("/api/models/{model_id}", status_code=204)
+    def delete_model(model_id: str) -> Response:
+        storage_root_path = getattr(app.state, "storage_root", resolved_storage_root)
+
+        try:
+            delete_custom_model(storage_root_path, model_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=error.args[0]) from error
+        except ModelDeletionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+
+        return Response(status_code=204)
 
     return app
 
