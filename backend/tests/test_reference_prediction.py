@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
@@ -51,20 +52,66 @@ def test_reference_model_predicts_digit_one_from_canvas(tmp_path: Path) -> None:
     assert abs(sum(body["prediction"]["confidences"]) - 1.0) < 1e-6
 
 
-def test_models_lists_the_reference_model(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "knn-classifier-v1",
+        "svm-classifier-v1",
+        "random-forest-classifier-v1",
+    ],
+)
+def test_shipped_classical_models_predict_digit_one_from_canvas(
+    tmp_path: Path,
+    model_id: str,
+) -> None:
     with TestClient(create_app(storage_root=tmp_path)) as client:
-        response = client.get("/api/models")
+        response = client.post(
+            "/api/predict",
+            json={
+                "model_id": model_id,
+                "canvas": {
+                    "width": 20,
+                    "height": 20,
+                    "pixels": make_digit_one_canvas(),
+                },
+            },
+        )
 
     assert response.status_code == 200
 
     body = response.json()
 
-    assert len(body["models"]) == 1
-    assert body["models"][0]["id"] == "reference-prototype-v1"
-    assert body["models"][0]["kind"] == "built-in"
-    assert body["models"][0]["metrics"]["accuracy"] > 0
-    assert body["models"][0]["dataset"]["source"] == "MNIST benchmark split"
-    assert body["models"][0]["trained_at"]
-    assert body["models"][0]["hyperparameters"]["prototype_grid_size"] == 20
-    assert len(body["models"][0]["evaluation"]["confusion_matrix"]) == 10
-    assert body["models"][0]["evaluation"]["sample_predictions"][0]["predicted"] == 1
+    assert body["model"]["id"] == model_id
+    assert body["model"]["kind"] == "built-in"
+    assert body["prediction"]["digit"] == 1
+    assert len(body["prediction"]["confidences"]) == 10
+    assert max(body["prediction"]["confidences"]) == body["prediction"]["confidences"][1]
+    assert abs(sum(body["prediction"]["confidences"]) - 1.0) < 1e-6
+
+
+def test_models_lists_all_shipped_classical_models(tmp_path: Path) -> None:
+    with TestClient(create_app(storage_root=tmp_path)) as client:
+        response = client.get("/api/models")
+
+    assert response.status_code == 200
+
+    models = body = response.json()["models"]
+    model_ids = [model["id"] for model in models]
+
+    assert model_ids == [
+        "reference-prototype-v1",
+        "knn-classifier-v1",
+        "svm-classifier-v1",
+        "random-forest-classifier-v1",
+    ]
+
+    for model in models:
+        assert model["kind"] == "built-in"
+        assert model["metrics"]["accuracy"] > 0
+        assert model["dataset"]["source"] == "MNIST benchmark split"
+        assert model["trained_at"]
+        assert len(model["evaluation"]["confusion_matrix"]) == 10
+
+    reference_model = next(model for model in models if model["id"] == "reference-prototype-v1")
+    assert reference_model["hyperparameters"]["prototype_grid_size"] == 20
+    assert reference_model["evaluation"]["sample_predictions"][0]["predicted"] == 1

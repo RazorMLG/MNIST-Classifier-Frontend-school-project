@@ -14,11 +14,16 @@ from backend.app.reference_model import (
     CONTENT_IMAGE_SIZE,
     REFERENCE_MODEL_ID,
     TARGET_IMAGE_SIZE,
-    ensure_reference_model_artifact,
     flatten,
     get_digit_prototypes,
     preprocess_canvas,
     softmax,
+)
+from backend.app.shipped_classical_models import (
+    ensure_shipped_model_artifact,
+    is_shipped_classical_model,
+    predict_shipped_classical_digit,
+    shipped_model_entries,
 )
 from backend.app.training_csv import calculate_split_counts, parse_training_csv_rows
 
@@ -47,7 +52,9 @@ def ensure_model_registry(storage_root: Path) -> dict[str, object]:
     registry_path = storage_root / "registry" / REGISTRY_FILE_NAME
     registry_path.parent.mkdir(parents=True, exist_ok=True)
 
-    ensure_reference_model_artifact(storage_root / "shipped-models")
+    shipped_models_root = storage_root / "shipped-models"
+    for entry in shipped_model_entries():
+        ensure_shipped_model_artifact(shipped_models_root, entry["id"])
 
     registry: dict[str, object] = {"version": 1, "models": []}
     if registry_path.exists():
@@ -57,13 +64,7 @@ def ensure_model_registry(storage_root: Path) -> dict[str, object]:
     deduped_entries: list[dict[str, str]] = []
     seen_model_ids: set[str] = set()
 
-    reference_entry = {
-        "id": REFERENCE_MODEL_ID,
-        "kind": "built-in",
-        "artifact_path": f"shipped-models/{REFERENCE_MODEL_ID}.json",
-    }
-
-    for entry in [reference_entry, *current_entries]:
+    for entry in [*shipped_model_entries(), *current_entries]:
         model_id = str(entry.get("id", "")).strip()
         kind = str(entry.get("kind", "")).strip()
         artifact_path = str(entry.get("artifact_path", "")).strip()
@@ -98,9 +99,12 @@ def list_available_models(storage_root: Path) -> list[dict[str, object]]:
     for entry in registry["models"]:
         artifact_path = storage_root / entry["artifact_path"]
         if not artifact_path.exists():
-            if entry["id"] == REFERENCE_MODEL_ID:
-                ensure_reference_model_artifact(storage_root / "shipped-models")
-            else:
+            if entry["kind"] != "built-in":
+                continue
+
+            try:
+                ensure_shipped_model_artifact(storage_root / "shipped-models", entry["id"])
+            except KeyError:
                 continue
 
         metadata = json.loads(artifact_path.read_text(encoding="utf-8"))
@@ -125,6 +129,15 @@ def predict_available_model(
         from backend.app.reference_model import predict_reference_digit
 
         return predict_reference_digit(
+            model_id=model_id,
+            width=width,
+            height=height,
+            pixels=pixels,
+            storage_root=storage_root,
+        )
+
+    if is_shipped_classical_model(model_id):
+        return predict_shipped_classical_digit(
             model_id=model_id,
             width=width,
             height=height,

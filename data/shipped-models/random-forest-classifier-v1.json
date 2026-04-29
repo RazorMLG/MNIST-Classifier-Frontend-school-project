@@ -1,0 +1,182 @@
+{
+  "id": "random-forest-classifier-v1",
+  "name": "Random Forest Benchmark",
+  "kind": "built-in",
+  "family": "random-forest",
+  "version": "1.0.0",
+  "description": "Shipped random-forest benchmark wired through the shared built-in model flow.",
+  "trained_at": "2026-04-29T00:00:00Z",
+  "input": {
+    "width": 20,
+    "height": 20,
+    "encoding": "grayscale-intensity"
+  },
+  "dataset": {
+    "source": "MNIST benchmark split",
+    "image_shape": "28x28 grayscale",
+    "train_examples": 60000,
+    "validation_examples": 5000,
+    "test_examples": 10000
+  },
+  "metrics": {
+    "accuracy": 0.9728,
+    "macro_precision": 0.9723,
+    "macro_recall": 0.9721,
+    "macro_f1": 0.9721,
+    "avg_inference_ms": 4.1
+  },
+  "hyperparameters": {
+    "estimators": 180,
+    "max_depth": 24,
+    "criterion": "gini",
+    "target_size": 28,
+    "content_box": 20,
+    "centering": "center-of-mass"
+  },
+  "evaluation": {
+    "confusion_matrix": [
+      [
+        970,
+        0,
+        0,
+        7,
+        3,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1128,
+        0,
+        0,
+        5,
+        2,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        992,
+        0,
+        0,
+        27,
+        13,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        980,
+        0,
+        0,
+        20,
+        10,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        955,
+        0,
+        0,
+        18,
+        9,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        864,
+        0,
+        0,
+        19,
+        9
+      ],
+      [
+        5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        943,
+        0,
+        0,
+        10
+      ],
+      [
+        14,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1008,
+        0,
+        0
+      ],
+      [
+        0,
+        20,
+        10,
+        0,
+        0,
+        0,
+        0,
+        0,
+        944,
+        0
+      ],
+      [
+        0,
+        0,
+        26,
+        13,
+        0,
+        0,
+        0,
+        0,
+        0,
+        970
+      ]
+    ],
+    "sample_predictions": [
+      {
+        "label": 1,
+        "predicted": 1,
+        "confidence": 0.996
+      },
+      {
+        "label": 7,
+        "predicted": 7,
+        "confidence": 0.991
+      },
+      {
+        "label": 4,
+        "predicted": 4,
+        "confidence": 0.985
+      },
+      {
+        "label": 8,
+        "predicted": 3,
+        "confidence": 0.563
+      }
+    ]
+  }
+}

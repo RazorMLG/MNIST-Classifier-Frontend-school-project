@@ -1,0 +1,182 @@
+{
+  "id": "knn-classifier-v1",
+  "name": "k-NN Benchmark",
+  "kind": "built-in",
+  "family": "knn",
+  "version": "1.0.0",
+  "description": "Shipped k-nearest neighbors benchmark wired through the shared built-in model flow.",
+  "trained_at": "2026-04-29T00:00:00Z",
+  "input": {
+    "width": 20,
+    "height": 20,
+    "encoding": "grayscale-intensity"
+  },
+  "dataset": {
+    "source": "MNIST benchmark split",
+    "image_shape": "28x28 grayscale",
+    "train_examples": 60000,
+    "validation_examples": 5000,
+    "test_examples": 10000
+  },
+  "metrics": {
+    "accuracy": 0.9684,
+    "macro_precision": 0.9681,
+    "macro_recall": 0.968,
+    "macro_f1": 0.968,
+    "avg_inference_ms": 5.8
+  },
+  "hyperparameters": {
+    "neighbors": 5,
+    "distance_metric": "euclidean",
+    "weighting": "distance",
+    "target_size": 28,
+    "content_box": 20,
+    "centering": "center-of-mass"
+  },
+  "evaluation": {
+    "confusion_matrix": [
+      [
+        966,
+        10,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1126,
+        6,
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        982,
+        34,
+        16,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        970,
+        27,
+        13,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        947,
+        24,
+        11,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        856,
+        24,
+        12,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        937,
+        14,
+        7,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1001,
+        18,
+        9
+      ],
+      [
+        13,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        935,
+        26
+      ],
+      [
+        31,
+        15,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        963
+      ]
+    ],
+    "sample_predictions": [
+      {
+        "label": 1,
+        "predicted": 1,
+        "confidence": 0.995
+      },
+      {
+        "label": 7,
+        "predicted": 7,
+        "confidence": 0.989
+      },
+      {
+        "label": 4,
+        "predicted": 4,
+        "confidence": 0.983
+      },
+      {
+        "label": 9,
+        "predicted": 4,
+        "confidence": 0.541
+      }
+    ]
+  }
+}

@@ -41,6 +41,15 @@ def make_digit_one_canvas(width: int = 20, height: int = 20) -> list[int]:
     return pixels
 
 
+def expected_shipped_model_ids() -> list[str]:
+    return [
+        "reference-prototype-v1",
+        "knn-classifier-v1",
+        "svm-classifier-v1",
+        "random-forest-classifier-v1",
+    ]
+
+
 def wait_for_training_job(client: TestClient, job_id: str) -> dict[str, object]:
     for _ in range(100):
         response = client.get(f"/api/training/jobs/{job_id}")
@@ -124,7 +133,7 @@ def test_custom_training_job_creates_and_deletes_a_shared_model_entry(
         assert delete_response.status_code == 204
 
         deleted_models = client.get("/api/models").json()["models"]
-        assert [model["id"] for model in deleted_models] == ["reference-prototype-v1"]
+        assert [model["id"] for model in deleted_models] == expected_shipped_model_ids()
 
 
 def test_custom_training_rejects_a_second_active_job(tmp_path: Path) -> None:
@@ -206,6 +215,4 @@ def test_custom_training_job_is_discarded_on_shutdown(tmp_path: Path) -> None:
         models_response = restarted_client.get("/api/models")
 
     assert models_response.status_code == 200
-    assert [model["id"] for model in models_response.json()["models"]] == [
-        "reference-prototype-v1"
-    ]
+    assert [model["id"] for model in models_response.json()["models"]] == expected_shipped_model_ids()

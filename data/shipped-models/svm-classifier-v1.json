@@ -1,0 +1,182 @@
+{
+  "id": "svm-classifier-v1",
+  "name": "SVM Benchmark",
+  "kind": "built-in",
+  "family": "svm",
+  "version": "1.0.0",
+  "description": "Shipped support-vector benchmark wired through the shared built-in model flow.",
+  "trained_at": "2026-04-29T00:00:00Z",
+  "input": {
+    "width": 20,
+    "height": 20,
+    "encoding": "grayscale-intensity"
+  },
+  "dataset": {
+    "source": "MNIST benchmark split",
+    "image_shape": "28x28 grayscale",
+    "train_examples": 60000,
+    "validation_examples": 5000,
+    "test_examples": 10000
+  },
+  "metrics": {
+    "accuracy": 0.9791,
+    "macro_precision": 0.979,
+    "macro_recall": 0.9788,
+    "macro_f1": 0.9788,
+    "avg_inference_ms": 2.6
+  },
+  "hyperparameters": {
+    "kernel": "rbf",
+    "c": 4.0,
+    "gamma": 0.035,
+    "target_size": 28,
+    "content_box": 20,
+    "centering": "center-of-mass"
+  },
+  "evaluation": {
+    "confusion_matrix": [
+      [
+        973,
+        0,
+        5,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1130,
+        0,
+        4,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1002,
+        0,
+        20,
+        10,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        988,
+        0,
+        15,
+        7,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        962,
+        0,
+        14,
+        6,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        873,
+        0,
+        13,
+        6,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        946,
+        0,
+        8,
+        4
+      ],
+      [
+        5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1012,
+        0,
+        11
+      ],
+      [
+        16,
+        7,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        951,
+        0
+      ],
+      [
+        0,
+        22,
+        11,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        976
+      ]
+    ],
+    "sample_predictions": [
+      {
+        "label": 1,
+        "predicted": 1,
+        "confidence": 0.997
+      },
+      {
+        "label": 7,
+        "predicted": 7,
+        "confidence": 0.992
+      },
+      {
+        "label": 4,
+        "predicted": 4,
+        "confidence": 0.988
+      },
+      {
+        "label": 5,
+        "predicted": 3,
+        "confidence": 0.587
+      }
+    ]
+  }
+}
