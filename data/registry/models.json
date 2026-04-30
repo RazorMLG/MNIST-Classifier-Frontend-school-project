@@ -22,9 +22,19 @@
       "artifact_path": "shipped-models/random-forest-classifier-v1.json"
     },
     {
-      "id": "custom-sigma",
+      "id": "mlp-classifier-v1",
+      "kind": "built-in",
+      "artifact_path": "shipped-models/mlp-classifier-v1.json"
+    },
+    {
+      "id": "cnn-classifier-v1",
+      "kind": "built-in",
+      "artifact_path": "shipped-models/cnn-classifier-v1.json"
+    },
+    {
+      "id": "custom-k-nn-custom",
       "kind": "custom",
-      "artifact_path": "custom-models/custom-sigma.json"
+      "artifact_path": "custom-models/custom-k-nn-custom.json"
     }
   ]
 }

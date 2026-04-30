@@ -686,7 +686,9 @@ describe("App", () => {
 
     fireEvent.change(screen.getByLabelText(/training csv/i), {
       target: {
-        files: [new File([makeTrainingCsv()], "train.csv", { type: "text/csv" })],
+        files: [
+          new File([makeTrainingCsv()], "train.csv", { type: "text/csv" }),
+        ],
       },
     });
 
@@ -834,7 +836,9 @@ describe("App", () => {
 
     fireEvent.change(screen.getByLabelText(/training csv/i), {
       target: {
-        files: [new File([makeTrainingCsv()], "train.csv", { type: "text/csv" })],
+        files: [
+          new File([makeTrainingCsv()], "train.csv", { type: "text/csv" }),
+        ],
       },
     });
     fireEvent.click(screen.getByRole("button", { name: /preview split/i }));
@@ -859,7 +863,9 @@ describe("App", () => {
       name: /model leaderboard/i,
     });
 
-    expect(within(leaderboard).queryByText(/broken k-nn/i)).not.toBeInTheDocument();
+    expect(
+      within(leaderboard).queryByText(/broken k-nn/i),
+    ).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/model name/i), {
       target: { value: "Retry k-NN" },

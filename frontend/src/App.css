@@ -208,13 +208,28 @@ body {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 1rem;
+  box-sizing: border-box;
   color: #f7f1e7;
+  display: block;
   font: inherit;
   min-width: 0;
   padding: 0.85rem 1rem;
+  width: 100%;
+}
+
+.model-select,
+.training-input {
+  height: 3.25rem;
+  line-height: 1.2;
+}
+
+.model-select option {
+  background: #f7f1e7;
+  color: #081018;
 }
 
 .training-file-input {
+  min-height: 3.25rem;
   padding: 0.7rem 0.9rem;
 }
 
@@ -366,6 +381,7 @@ body {
 }
 
 .training-field {
+  align-content: start;
   display: grid;
   gap: 0.45rem;
 }
