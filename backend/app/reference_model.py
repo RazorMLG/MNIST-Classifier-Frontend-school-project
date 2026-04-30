@@ -294,6 +294,23 @@ def preprocess_canvas(width: int, height: int, pixels: list[float]) -> list[list
     return center_on_mass(target)
 
 
+def preprocess_mnist_pixels(pixels: list[int | float]) -> list[float]:
+    if len(pixels) != TARGET_IMAGE_SIZE * TARGET_IMAGE_SIZE:
+        raise ValueError(
+            f"MNIST rows must contain {TARGET_IMAGE_SIZE * TARGET_IMAGE_SIZE} pixels."
+        )
+
+    image = [
+        [
+            clamp(float(pixels[(row * TARGET_IMAGE_SIZE) + column]) / 255.0)
+            for column in range(TARGET_IMAGE_SIZE)
+        ]
+        for row in range(TARGET_IMAGE_SIZE)
+    ]
+
+    return flatten(center_on_mass(image))
+
+
 def calculate_confidences(processed_canvas: list[list[float]]) -> list[float]:
     flat_pixels = flatten(processed_canvas)
     distances = []

@@ -8,8 +8,8 @@ Build a modular monolith with a Python backend and a React + TypeScript frontend
 
 The product will ship with six classifier types:
 
-1. k-NN from scratch
-2. Softmax classifier from scratch
+1. k-NN from scikit-learn
+2. Softmax classifier via scikit-learn
 3. Support Vector Machine via scikit-learn
 4. Random Forest via scikit-learn
 5. Multi Layer Perceptron via PyTorch
@@ -75,8 +75,10 @@ Pre-trained models will be available immediately. Users will also be able to tra
 - The system will be a modular monolith, not a microservice architecture.
 - The backend will be a single Python API service responsible for preprocessing, training, inference, evaluation, persistence, and job orchestration.
 - The frontend will be a React + TypeScript web application responsible for canvas interaction, leaderboard browsing, model details, and training workflows.
-- The classifier stack will use a hybrid implementation strategy: k-NN and softmax from scratch, SVM and random forest via scikit-learn, MLP and CNN via PyTorch.
+- The shipped classical classifier stack will use scikit-learn for k-NN, SVM, and random forest, with artifacts regenerated offline from the repository root `train.csv` rather than trained during normal startup.
+- The softmax classifier and deep-learning families remain separate planned slices with their own implementation choices.
 - Pre-trained models will ship with the project when their size remains reasonable for version control and portability.
+- Shipped classical model evaluation will come only from deterministic train, validation, and test partitions derived from the labeled root `train.csv`; the unlabeled root `test.csv` is out of scope for built-in evaluation.
 - Custom runtime training will support all six classifier families.
 - Training jobs will be asynchronous, but version one will permit only one active training job at a time.
 - Each training request will target a single classifier type rather than launching a multi-model batch.
@@ -102,6 +104,7 @@ Pre-trained models will be available immediately. Users will also be able to tra
 - The project will be no-auth and optimized for plug-and-play use on other Windows PCs.
 - The startup model for version one will be script-based rather than Docker-based.
 - The intended visible startup entrypoint will be a root PowerShell script.
+- Shipped classical artifact regeneration will be an explicit maintainer command rather than part of the normal startup flow.
 - The startup flow may assume Python and Node are already installed on the target machine.
 - The major deep modules to build are the data/preprocessing module, the model adapter layer, the training job orchestrator, the model registry, the evaluation module, the inference API, and the frontend application shell.
 - Milestone ordering has been intentionally deferred until the deeper architecture and TDD approach are refined further.

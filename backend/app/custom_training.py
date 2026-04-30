@@ -52,10 +52,6 @@ def ensure_model_registry(storage_root: Path) -> dict[str, object]:
     registry_path = storage_root / "registry" / REGISTRY_FILE_NAME
     registry_path.parent.mkdir(parents=True, exist_ok=True)
 
-    shipped_models_root = storage_root / "shipped-models"
-    for entry in shipped_model_entries():
-        ensure_shipped_model_artifact(shipped_models_root, entry["id"])
-
     registry: dict[str, object] = {"version": 1, "models": []}
     if registry_path.exists():
         registry = json.loads(registry_path.read_text(encoding="utf-8"))
@@ -97,17 +93,20 @@ def list_available_models(storage_root: Path) -> list[dict[str, object]]:
     models: list[dict[str, object]] = []
 
     for entry in registry["models"]:
-        artifact_path = storage_root / entry["artifact_path"]
-        if not artifact_path.exists():
-            if entry["kind"] != "built-in":
-                continue
-
+        if entry["kind"] == "built-in":
             try:
-                ensure_shipped_model_artifact(storage_root / "shipped-models", entry["id"])
-            except KeyError:
+                metadata = ensure_shipped_model_artifact(
+                    storage_root / "shipped-models",
+                    entry["id"],
+                )
+            except (KeyError, ValueError):
+                continue
+        else:
+            artifact_path = storage_root / entry["artifact_path"]
+            if not artifact_path.exists():
                 continue
 
-        metadata = json.loads(artifact_path.read_text(encoding="utf-8"))
+            metadata = json.loads(artifact_path.read_text(encoding="utf-8"))
         models.append(to_public_model_metadata(metadata))
         next_entries.append(entry)
 

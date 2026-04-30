@@ -1,34 +1,53 @@
 {
   "id": "random-forest-classifier-v1",
-  "name": "Random Forest Benchmark",
+  "name": "Random Forest Classifier",
   "kind": "built-in",
   "family": "random-forest",
   "version": "1.0.0",
-  "description": "Shipped random-forest benchmark wired through the shared built-in model flow.",
-  "trained_at": "2026-04-29T00:00:00Z",
+  "description": "Shipped random forest classifier trained from the repository train.csv.",
+  "trained_at": "2026-04-30T12:53:52Z",
   "input": {
     "width": 20,
     "height": 20,
     "encoding": "grayscale-intensity"
   },
   "dataset": {
-    "source": "MNIST benchmark split",
+    "source": "train.csv",
     "image_shape": "28x28 grayscale",
-    "train_examples": 60000,
-    "validation_examples": 5000,
-    "test_examples": 10000
+    "train_examples": 33600,
+    "validation_examples": 4200,
+    "test_examples": 4200
+  },
+  "training": {
+    "split_seed": 17,
+    "split_counts": {
+      "train": 33600,
+      "validation": 4200,
+      "test": 4200
+    },
+    "split_ratios": {
+      "train": 0.8,
+      "validation": 0.1,
+      "test": 0.1
+    }
+  },
+  "preprocessing": {
+    "target_size": 28,
+    "content_box": 20,
+    "centering": "center-of-mass"
   },
   "metrics": {
-    "accuracy": 0.9728,
-    "macro_precision": 0.9723,
-    "macro_recall": 0.9721,
-    "macro_f1": 0.9721,
-    "avg_inference_ms": 4.1
+    "accuracy": 0.9481,
+    "macro_precision": 0.9479,
+    "macro_recall": 0.9478,
+    "macro_f1": 0.9478,
+    "avg_inference_ms": 28.521
   },
   "hyperparameters": {
-    "estimators": 180,
+    "estimators": 120,
     "max_depth": 24,
-    "criterion": "gini",
+    "feature_projection": "pca",
+    "pca_components": 48,
     "target_size": 28,
     "content_box": 20,
     "centering": "center-of-mass"
@@ -36,147 +55,153 @@
   "evaluation": {
     "confusion_matrix": [
       [
-        970,
+        401,
+        0,
+        1,
+        0,
+        2,
+        2,
+        5,
         0,
         0,
-        7,
-        3,
-        0,
-        0,
-        0,
-        0,
-        0
+        2
       ],
       [
         0,
-        1128,
-        0,
-        0,
+        454,
         5,
         2,
         0,
         0,
-        0,
-        0
-      ],
-      [
-        0,
-        0,
-        992,
-        0,
-        0,
-        27,
-        13,
-        0,
-        0,
-        0
-      ],
-      [
-        0,
-        0,
-        0,
-        980,
-        0,
-        0,
-        20,
-        10,
-        0,
-        0
-      ],
-      [
-        0,
-        0,
-        0,
-        0,
-        955,
-        0,
-        0,
-        18,
-        9,
-        0
-      ],
-      [
-        0,
-        0,
-        0,
-        0,
-        0,
-        864,
-        0,
-        0,
-        19,
-        9
+        2,
+        1,
+        3,
+        1
       ],
       [
         5,
-        0,
-        0,
-        0,
-        0,
-        0,
-        943,
-        0,
-        0,
-        10
+        1,
+        390,
+        4,
+        2,
+        1,
+        1,
+        5,
+        6,
+        3
       ],
       [
-        14,
+        1,
+        0,
+        6,
+        409,
+        0,
+        9,
+        0,
+        5,
+        3,
+        2
+      ],
+      [
+        1,
+        1,
+        3,
+        0,
+        385,
+        1,
+        0,
+        3,
+        2,
+        11
+      ],
+      [
+        2,
+        0,
+        1,
+        9,
+        2,
+        354,
+        2,
+        1,
+        6,
+        3
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        7,
+        405,
+        0,
+        1,
+        0
+      ],
+      [
+        2,
+        5,
+        4,
+        0,
+        1,
+        0,
+        0,
+        414,
+        0,
+        14
+      ],
+      [
+        0,
+        4,
+        0,
+        9,
+        3,
+        4,
+        1,
+        0,
+        382,
+        3
+      ],
+      [
+        3,
+        0,
+        2,
+        7,
         6,
         0,
         0,
-        0,
-        0,
-        0,
-        1008,
-        0,
-        0
-      ],
-      [
-        0,
-        20,
-        10,
-        0,
-        0,
-        0,
-        0,
-        0,
-        944,
-        0
-      ],
-      [
-        0,
-        0,
-        26,
-        13,
-        0,
-        0,
-        0,
-        0,
-        0,
-        970
+        9,
+        4,
+        388
       ]
     ],
     "sample_predictions": [
       {
         "label": 1,
         "predicted": 1,
-        "confidence": 0.996
-      },
-      {
-        "label": 7,
-        "predicted": 7,
-        "confidence": 0.991
+        "confidence": 0.999
       },
       {
         "label": 4,
         "predicted": 4,
-        "confidence": 0.985
+        "confidence": 0.417
       },
       {
-        "label": 8,
-        "predicted": 3,
-        "confidence": 0.563
+        "label": 2,
+        "predicted": 2,
+        "confidence": 0.8664
+      },
+      {
+        "label": 1,
+        "predicted": 1,
+        "confidence": 0.9739
       }
     ]
+  },
+  "artifact": {
+    "version": 1,
+    "serializer": "pickle-gzip",
+    "estimator": "sklearn.pipeline.Pipeline",
+    "path": "shipped-models/random-forest-classifier-v1.pkl.gz"
   }
 }

@@ -5,6 +5,26 @@
       "id": "reference-prototype-v1",
       "kind": "built-in",
       "artifact_path": "shipped-models/reference-prototype-v1.json"
+    },
+    {
+      "id": "knn-classifier-v1",
+      "kind": "built-in",
+      "artifact_path": "shipped-models/knn-classifier-v1.json"
+    },
+    {
+      "id": "svm-classifier-v1",
+      "kind": "built-in",
+      "artifact_path": "shipped-models/svm-classifier-v1.json"
+    },
+    {
+      "id": "random-forest-classifier-v1",
+      "kind": "built-in",
+      "artifact_path": "shipped-models/random-forest-classifier-v1.json"
+    },
+    {
+      "id": "custom-sigma",
+      "kind": "custom",
+      "artifact_path": "custom-models/custom-sigma.json"
     }
   ]
 }

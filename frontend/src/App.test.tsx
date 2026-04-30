@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -528,7 +534,8 @@ describe("App", () => {
       id: "custom-classroom-prototype",
       name: "Classroom Prototype",
       kind: "custom",
-      description: "Custom prototype classifier trained from an uploaded MNIST CSV.",
+      description:
+        "Custom prototype classifier trained from an uploaded MNIST CSV.",
       trained_at: "2026-04-29T12:00:00Z",
       metrics: {
         accuracy: 0.954,
@@ -762,7 +769,9 @@ describe("App", () => {
       await screen.findByText(/building digit prototypes/i),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText(/classroom prototype is now available in the shared model list/i),
+      await screen.findByText(
+        /classroom prototype is now available in the shared model list/i,
+      ),
     ).toBeInTheDocument();
 
     const leaderboard = screen.getByRole("table", {
@@ -773,9 +782,13 @@ describe("App", () => {
       within(leaderboard).getByText(/classroom prototype/i),
     ).toBeInTheDocument();
     expect(within(leaderboard).getByText(/^custom$/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /delete custom model/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /delete custom model/i }),
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /delete custom model/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /delete custom model/i }),
+    );
 
     expect(deletedModelPath).toBe("/api/models/custom-classroom-prototype");
     expect(

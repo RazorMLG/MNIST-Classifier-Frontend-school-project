@@ -546,28 +546,31 @@ export function App() {
     setTrainingJobState({ kind: "submitting" });
 
     try {
-      const payload = await fetchJson<TrainingJobPayload>("/api/training/jobs", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const payload = await fetchJson<TrainingJobPayload>(
+        "/api/training/jobs",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model_name: modelName,
+            file_name: trainingFile.name,
+            csv_text: await readTextFromFile(trainingFile),
+            split: {
+              train_ratio: toSplitRatio(trainingSplit.train),
+              validation_ratio: toSplitRatio(trainingSplit.validation),
+              test_ratio: toSplitRatio(trainingSplit.test),
+            },
+            seed: customTrainingForm.seed,
+            hyperparameters: {
+              max_examples_per_label: customTrainingForm.maxExamplesPerLabel,
+              prototype_blend: customTrainingForm.prototypeBlend,
+              temperature: customTrainingForm.temperature,
+            },
+          }),
         },
-        body: JSON.stringify({
-          model_name: modelName,
-          file_name: trainingFile.name,
-          csv_text: await readTextFromFile(trainingFile),
-          split: {
-            train_ratio: toSplitRatio(trainingSplit.train),
-            validation_ratio: toSplitRatio(trainingSplit.validation),
-            test_ratio: toSplitRatio(trainingSplit.test),
-          },
-          seed: customTrainingForm.seed,
-          hyperparameters: {
-            max_examples_per_label: customTrainingForm.maxExamplesPerLabel,
-            prototype_blend: customTrainingForm.prototypeBlend,
-            temperature: customTrainingForm.temperature,
-          },
-        }),
-      });
+      );
 
       if (payload.job.status === "completed") {
         await refreshBootstrap(payload.job.model_id);
@@ -612,7 +615,9 @@ export function App() {
     } catch (error) {
       setModelDeleteFeedback(
         `Delete failed: ${
-          error instanceof Error ? error.message : "Custom model deletion failed."
+          error instanceof Error
+            ? error.message
+            : "Custom model deletion failed."
         }`,
       );
     } finally {
@@ -983,7 +988,10 @@ export function App() {
                         step="1"
                         value={customTrainingForm.seed}
                         onChange={(event) => {
-                          handleTrainingSettingChange("seed", event.target.value);
+                          handleTrainingSettingChange(
+                            "seed",
+                            event.target.value,
+                          );
                         }}
                       />
                       <p className="helper-copy">
@@ -1239,7 +1247,10 @@ export function App() {
                         {trainingJobState.job.progress.stage}
                       </p>
                       <strong>
-                        {Math.round(trainingJobState.job.progress.percent * 100)}%
+                        {Math.round(
+                          trainingJobState.job.progress.percent * 100,
+                        )}
+                        %
                       </strong>
                     </div>
                     <div
@@ -1457,7 +1468,9 @@ export function App() {
                       void handleDeleteSelectedModel();
                     }}
                   >
-                    {isDeletingModel ? "Deleting custom model" : "Delete custom model"}
+                    {isDeletingModel
+                      ? "Deleting custom model"
+                      : "Delete custom model"}
                   </button>
                 ) : null}
               </div>

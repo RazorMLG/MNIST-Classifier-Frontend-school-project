@@ -1,4 +1,7 @@
+# This file lists the dependencies for the current state of the project. For more information about future needed dependencies, please refer the `PRD.md` file.
+
 fastapi>=0.115,<1
 httpx>=0.28,<1
 pytest>=9,<10
+scikit-learn>=1.5,<2
 uvicorn>=0.30,<1
