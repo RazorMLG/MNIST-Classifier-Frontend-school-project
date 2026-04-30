@@ -935,8 +935,8 @@ export function App() {
                 <p className="status-copy board-copy">
                   Upload a labeled CSV that matches the bundled MNIST training
                   schema, preview how the split will divide the dataset, then
-                  launch a curated prototype, k-NN, SVM, Random Forest, MLP,
-                  or CNN run.
+                  launch a curated prototype, k-NN, SVM, Random Forest, MLP, or
+                  CNN run.
                 </p>
 
                 <div className="training-intake-grid">
@@ -1070,7 +1070,8 @@ export function App() {
                         }}
                       />
                       <p className="helper-copy">
-                        Use a unique name so each run lands in the shared
+                        Version one requires a manual model name. The app does
+                        not suggest defaults, and each run lands in the shared
                         leaderboard as its own entry.
                       </p>
                     </div>
@@ -1425,11 +1426,14 @@ export function App() {
                     </div>
                   ) : null}
 
-                  {(customTrainingForm.modelFamily === "mlp" ||
-                    customTrainingForm.modelFamily === "cnn") ? (
+                  {customTrainingForm.modelFamily === "mlp" ||
+                  customTrainingForm.modelFamily === "cnn" ? (
                     <div className="training-config-grid">
                       <div className="training-field">
-                        <label className="field-label" htmlFor="training-epochs">
+                        <label
+                          className="field-label"
+                          htmlFor="training-epochs"
+                        >
                           Epochs
                         </label>
                         <input

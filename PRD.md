@@ -108,7 +108,10 @@ Pre-trained models will be available immediately. Users will also be able to tra
 - The startup flow may assume Python and Node are already installed on the target machine.
 - The major deep modules to build are the data/preprocessing module, the model adapter layer, the training job orchestrator, the model registry, the evaluation module, the inference API, and the frontend application shell.
 - Milestone ordering has been intentionally deferred until the deeper architecture and TDD approach are refined further.
-- Open implementation questions still remaining are whether to auto-suggest default names for custom models, whether failed jobs should appear in history in version one, and whether there should be a separate setup script in addition to the start script.
+- Resolved version-one policy decisions:
+- Custom training keeps model naming manual; the UI does not auto-suggest or auto-generate a default name.
+- Failed training jobs surface as inline feedback for the current run only; they do not create failed leaderboard entries or persistent job history.
+- The root `start.ps1` script remains the only visible startup entrypoint; version one does not add a separate user-facing setup script.
 
 ## Testing Decisions
 

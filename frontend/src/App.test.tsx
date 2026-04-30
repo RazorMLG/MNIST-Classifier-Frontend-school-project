@@ -603,6 +603,275 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps custom model naming manual across training families", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (input === "/api/health") {
+          return {
+            ok: true,
+            json: async () => ({
+              status: "ok",
+              service: "mnist-backend",
+              storage: {
+                ready: true,
+                root: "O:/Projects/MNIST Projekat/data",
+                directories: ["shipped-models", "custom-models", "registry"],
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/models") {
+          return {
+            ok: true,
+            json: async () => ({
+              models: [
+                {
+                  id: "reference-prototype-v1",
+                  name: "Reference Prototype",
+                  kind: "built-in",
+                },
+              ],
+            }),
+          };
+        }
+
+        if (input === "/api/training/csv-preview") {
+          const requestBody = JSON.parse(String(init?.body));
+
+          expect(requestBody.file_name).toBe("train.csv");
+
+          return {
+            ok: true,
+            json: async () => ({
+              file_name: "train.csv",
+              dataset: {
+                example_count: 10,
+                feature_count: 784,
+                label_range: { min: 0, max: 9 },
+              },
+              split: {
+                ratios: {
+                  train: 0.8,
+                  validation: 0.1,
+                  test: 0.1,
+                },
+                counts: {
+                  train: 8,
+                  validation: 1,
+                  test: 1,
+                },
+              },
+            }),
+          };
+        }
+
+        throw new Error(`Unexpected fetch call: ${String(input)}`);
+      },
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /training mode/i }),
+    );
+
+    const modelNameInput = screen.getByLabelText(/model name/i);
+    expect(modelNameInput).toHaveValue("");
+    expect(
+      screen.getByText(/version one requires a manual model name/i),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/training csv/i), {
+      target: {
+        files: [new File([makeTrainingCsv()], "train.csv", { type: "text/csv" })],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /preview split/i }));
+
+    expect(await screen.findByText(/train 8/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /start training/i }),
+    ).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/training model/i), {
+      target: { value: "knn" },
+    });
+
+    expect(modelNameInput).toHaveValue("");
+    expect(
+      screen.getByRole("button", { name: /start training/i }),
+    ).toBeDisabled();
+
+    fireEvent.change(modelNameInput, {
+      target: { value: "Classroom k-NN" },
+    });
+
+    expect(
+      screen.getByRole("button", { name: /start training/i }),
+    ).not.toBeDisabled();
+  });
+
+  it("shows failed training inline without adding a failed model entry", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (input === "/api/health") {
+          return {
+            ok: true,
+            json: async () => ({
+              status: "ok",
+              service: "mnist-backend",
+              storage: {
+                ready: true,
+                root: "O:/Projects/MNIST Projekat/data",
+                directories: ["shipped-models", "custom-models", "registry"],
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/models") {
+          return {
+            ok: true,
+            json: async () => ({
+              models: [
+                {
+                  id: "reference-prototype-v1",
+                  name: "Reference Prototype",
+                  kind: "built-in",
+                  input: { width: 20, height: 20 },
+                },
+              ],
+            }),
+          };
+        }
+
+        if (input === "/api/training/csv-preview") {
+          return {
+            ok: true,
+            json: async () => ({
+              file_name: "train.csv",
+              dataset: {
+                example_count: 10,
+                feature_count: 784,
+                label_range: { min: 0, max: 9 },
+              },
+              split: {
+                ratios: {
+                  train: 0.8,
+                  validation: 0.1,
+                  test: 0.1,
+                },
+                counts: {
+                  train: 8,
+                  validation: 1,
+                  test: 1,
+                },
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/training/jobs") {
+          return {
+            ok: true,
+            status: 202,
+            json: async () => ({
+              job: {
+                id: "job-failed",
+                model_id: "custom-broken-knn",
+                model_name: "Broken k-NN",
+                model_family: "knn",
+                status: "running",
+                progress: {
+                  percent: 0.4,
+                  stage: "Training k-NN classifier",
+                },
+                error: null,
+                started_at: "2026-04-30T12:00:00Z",
+                completed_at: null,
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/training/jobs/job-failed") {
+          return {
+            ok: true,
+            json: async () => ({
+              job: {
+                id: "job-failed",
+                model_id: "custom-broken-knn",
+                model_name: "Broken k-NN",
+                model_family: "knn",
+                status: "failed",
+                progress: {
+                  percent: 0.4,
+                  stage: "Training k-NN classifier",
+                },
+                error: "k-NN training did not complete successfully.",
+                started_at: "2026-04-30T12:00:00Z",
+                completed_at: "2026-04-30T12:00:02Z",
+              },
+            }),
+          };
+        }
+
+        throw new Error(`Unexpected fetch call: ${String(input)}`);
+      },
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /training mode/i }),
+    );
+
+    fireEvent.change(screen.getByLabelText(/training csv/i), {
+      target: {
+        files: [new File([makeTrainingCsv()], "train.csv", { type: "text/csv" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /preview split/i }));
+    expect(await screen.findByText(/train 8/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/training model/i), {
+      target: { value: "knn" },
+    });
+    fireEvent.change(screen.getByLabelText(/model name/i), {
+      target: { value: "Broken k-NN" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /start training/i }));
+
+    expect(
+      await screen.findByText(
+        /custom training failed: k-nn training did not complete successfully/i,
+      ),
+    ).toBeInTheDocument();
+
+    const leaderboard = screen.getByRole("table", {
+      name: /model leaderboard/i,
+    });
+
+    expect(within(leaderboard).queryByText(/broken k-nn/i)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/model name/i), {
+      target: { value: "Retry k-NN" },
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/custom training failed:/i),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it("runs custom training through the shared leaderboard and model details flow", async () => {
     let trainingCompleted = false;
     let modelDeleted = false;
@@ -1412,7 +1681,9 @@ describe("App", () => {
     });
 
     expect(
-      await screen.findByText(/classroom mlp is now available in the shared model list/i),
+      await screen.findByText(
+        /classroom mlp is now available in the shared model list/i,
+      ),
     ).toBeInTheDocument();
     expect(
       await screen.findByText(/custom multilayer perceptron classifier/i),
