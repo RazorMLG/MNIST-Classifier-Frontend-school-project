@@ -179,7 +179,13 @@ type TrainingJobPayload = {
   job: TrainingJob;
 };
 
-type TrainingModelFamily = "prototype" | "knn" | "svm" | "random-forest";
+type TrainingModelFamily =
+  | "prototype"
+  | "knn"
+  | "svm"
+  | "random-forest"
+  | "mlp"
+  | "cnn";
 
 type CustomTrainingForm = {
   modelFamily: TrainingModelFamily;
@@ -188,6 +194,9 @@ type CustomTrainingForm = {
   maxExamplesPerLabel: number;
   prototypeBlend: number;
   temperature: number;
+  epochs: number;
+  batchSize: number;
+  learningRate: number;
   neighbors: number;
   pcaComponents: number;
   regularization: number;
@@ -216,6 +225,9 @@ const DEFAULT_CUSTOM_TRAINING_FORM: CustomTrainingForm = {
   maxExamplesPerLabel: 4,
   prototypeBlend: 0.35,
   temperature: 18,
+  epochs: 4,
+  batchSize: 32,
+  learningRate: 0.001,
   neighbors: 5,
   pcaComponents: 16,
   regularization: 1,
@@ -621,9 +633,8 @@ export function App() {
               test_ratio: toSplitRatio(trainingSplit.test),
             },
             seed: customTrainingForm.seed,
-            hyperparameters: buildCustomTrainingHyperparameters(
-              customTrainingForm,
-            ),
+            hyperparameters:
+              buildCustomTrainingHyperparameters(customTrainingForm),
           }),
         },
       );
@@ -924,7 +935,8 @@ export function App() {
                 <p className="status-copy board-copy">
                   Upload a labeled CSV that matches the bundled MNIST training
                   schema, preview how the split will divide the dataset, then
-                  launch a curated prototype, k-NN, SVM, or Random Forest run.
+                  launch a curated prototype, k-NN, SVM, Random Forest, MLP,
+                  or CNN run.
                 </p>
 
                 <div className="training-intake-grid">
@@ -1032,10 +1044,12 @@ export function App() {
                         <option value="random-forest">
                           Random Forest classifier
                         </option>
+                        <option value="mlp">MLP classifier</option>
+                        <option value="cnn">CNN classifier</option>
                       </select>
                       <p className="helper-copy">
-                        Completed runs reuse the same shared leaderboard and model
-                        picker regardless of family.
+                        Completed runs reuse the same shared leaderboard and
+                        model picker regardless of family.
                       </p>
                     </div>
 
@@ -1140,8 +1154,8 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 0.35. Higher blend leans more on the shipped
-                          reference prototype.
+                          Recommended 0.35. Higher blend leans more on the
+                          shipped reference prototype.
                         </p>
                       </div>
 
@@ -1178,7 +1192,10 @@ export function App() {
                   {customTrainingForm.modelFamily === "knn" ? (
                     <div className="training-config-grid">
                       <div className="training-field">
-                        <label className="field-label" htmlFor="training-neighbors">
+                        <label
+                          className="field-label"
+                          htmlFor="training-neighbors"
+                        >
                           Neighbors
                         </label>
                         <input
@@ -1197,8 +1214,8 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 5. Lower values stay sharper on lightly sized
-                          classroom splits.
+                          Recommended 5. Lower values stay sharper on lightly
+                          sized classroom splits.
                         </p>
                       </div>
 
@@ -1225,8 +1242,8 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 16. Keeps the feature projection lightweight
-                          for fast iteration.
+                          Recommended 16. Keeps the feature projection
+                          lightweight for fast iteration.
                         </p>
                       </div>
                     </div>
@@ -1257,13 +1274,16 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 1.0. Higher values fit more aggressively to
-                          the uploaded split.
+                          Recommended 1.0. Higher values fit more aggressively
+                          to the uploaded split.
                         </p>
                       </div>
 
                       <div className="training-field">
-                        <label className="field-label" htmlFor="training-max-iter">
+                        <label
+                          className="field-label"
+                          htmlFor="training-max-iter"
+                        >
                           Max iterations
                         </label>
                         <input
@@ -1310,8 +1330,8 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 16. Keeps the linear margin stable on small
-                          classroom datasets.
+                          Recommended 16. Keeps the linear margin stable on
+                          small classroom datasets.
                         </p>
                       </div>
                     </div>
@@ -1320,7 +1340,10 @@ export function App() {
                   {customTrainingForm.modelFamily === "random-forest" ? (
                     <div className="training-config-grid">
                       <div className="training-field">
-                        <label className="field-label" htmlFor="training-estimators">
+                        <label
+                          className="field-label"
+                          htmlFor="training-estimators"
+                        >
                           Estimators
                         </label>
                         <input
@@ -1339,13 +1362,16 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 96. More trees improve stability but extend
-                          training time.
+                          Recommended 96. More trees improve stability but
+                          extend training time.
                         </p>
                       </div>
 
                       <div className="training-field">
-                        <label className="field-label" htmlFor="training-max-depth">
+                        <label
+                          className="field-label"
+                          htmlFor="training-max-depth"
+                        >
                           Max depth
                         </label>
                         <input
@@ -1392,8 +1418,96 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 16. Keeps the projection compact before the
-                          forest stage.
+                          Recommended 16. Keeps the projection compact before
+                          the forest stage.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {(customTrainingForm.modelFamily === "mlp" ||
+                    customTrainingForm.modelFamily === "cnn") ? (
+                    <div className="training-config-grid">
+                      <div className="training-field">
+                        <label className="field-label" htmlFor="training-epochs">
+                          Epochs
+                        </label>
+                        <input
+                          id="training-epochs"
+                          className="training-input"
+                          type="number"
+                          min="1"
+                          max="12"
+                          step="1"
+                          value={customTrainingForm.epochs}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "epochs",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 4. Keep deep custom runs short enough to
+                          stay responsive on CPU-only classroom hardware.
+                        </p>
+                      </div>
+
+                      <div className="training-field">
+                        <label
+                          className="field-label"
+                          htmlFor="training-batch-size"
+                        >
+                          Batch size
+                        </label>
+                        <input
+                          id="training-batch-size"
+                          className="training-input"
+                          type="number"
+                          min="4"
+                          max="128"
+                          step="4"
+                          value={customTrainingForm.batchSize}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "batchSize",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 32. Smaller batches keep version-one deep
+                          training practical on portable hardware.
+                        </p>
+                      </div>
+
+                      <div className="training-field">
+                        <label
+                          className="field-label"
+                          htmlFor="training-learning-rate"
+                        >
+                          Learning rate
+                        </label>
+                        <input
+                          id="training-learning-rate"
+                          className="training-input"
+                          type="number"
+                          min="0.0001"
+                          max="0.05"
+                          step="0.0005"
+                          value={customTrainingForm.learningRate}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "learningRate",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended
+                          {customTrainingForm.modelFamily === "mlp"
+                            ? " 0.002 for the fixed MLP stack."
+                            : " 0.001 for the fixed CNN stack."}
                         </p>
                       </div>
                     </div>
@@ -2404,6 +2518,28 @@ function getCustomTrainingWarnings(form: CustomTrainingForm) {
     return warnings;
   }
 
+  if (form.modelFamily === "mlp" || form.modelFamily === "cnn") {
+    if (form.epochs > 6) {
+      warnings.push(
+        "Longer deep runs can noticeably increase training time on classroom hardware.",
+      );
+    }
+
+    if (form.batchSize > 64) {
+      warnings.push(
+        "Very large batch sizes can make small uploaded splits less stable during version-one deep training.",
+      );
+    }
+
+    if (form.learningRate > 0.01) {
+      warnings.push(
+        "Aggressive learning rates can make custom deep runs unstable or noisy.",
+      );
+    }
+
+    return warnings;
+  }
+
   if (form.pcaComponents > 32) {
     warnings.push(
       "Larger PCA projections need more examples and can slow down classroom-size custom runs.",
@@ -2438,9 +2574,7 @@ function getCustomTrainingWarnings(form: CustomTrainingForm) {
     }
 
     if (form.maxDepth > 24) {
-      warnings.push(
-        "Very deep trees can overfit small uploaded datasets.",
-      );
+      warnings.push("Very deep trees can overfit small uploaded datasets.");
     }
   }
 
@@ -2448,6 +2582,14 @@ function getCustomTrainingWarnings(form: CustomTrainingForm) {
 }
 
 function buildCustomTrainingHyperparameters(form: CustomTrainingForm) {
+  if (form.modelFamily === "mlp" || form.modelFamily === "cnn") {
+    return {
+      epochs: form.epochs,
+      batch_size: form.batchSize,
+      learning_rate: form.learningRate,
+    };
+  }
+
   if (form.modelFamily === "knn") {
     return {
       neighbors: form.neighbors,
@@ -2493,6 +2635,14 @@ function formatTrainingModelLabel(modelFamily: string) {
 
   if (modelFamily === "random-forest") {
     return "Random Forest";
+  }
+
+  if (modelFamily === "mlp") {
+    return "MLP";
+  }
+
+  if (modelFamily === "cnn") {
+    return "CNN";
   }
 
   return formatKeyLabel(modelFamily);

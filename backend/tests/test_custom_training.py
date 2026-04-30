@@ -297,6 +297,156 @@ def test_custom_training_job_supports_other_classical_model_families(
         assert prediction_response.json()["model"]["id"] == finished_job["model_id"]
 
 
+def test_custom_training_job_supports_custom_mlp_models(tmp_path: Path) -> None:
+    with TestClient(create_app(storage_root=tmp_path)) as client:
+        response = client.post(
+            "/api/training/jobs",
+            json={
+                "model_name": "Classroom MLP",
+                "model_family": "mlp",
+                "file_name": "classroom-train.csv",
+                "csv_text": make_reference_training_csv(samples_per_digit=6),
+                "split": {
+                    "train_ratio": 0.6,
+                    "validation_ratio": 0.2,
+                    "test_ratio": 0.2,
+                },
+                "seed": 29,
+                "hyperparameters": {
+                    "epochs": 2,
+                    "batch_size": 8,
+                    "learning_rate": 0.002,
+                },
+            },
+        )
+
+        assert response.status_code == 202
+
+        finished_job = wait_for_training_job(client, response.json()["job"]["id"])
+        assert finished_job["status"] == "completed"
+
+        models = client.get("/api/models").json()["models"]
+        custom_model = next(
+            model for model in models if model["id"] == finished_job["model_id"]
+        )
+
+        assert custom_model["family"] == "mlp"
+        assert custom_model["training"]["seed"] == 29
+        assert custom_model["training"]["config_snapshot"]["classifier"] == "mlp"
+        assert custom_model["training"]["config_snapshot"]["hyperparameters"] == {
+            "epochs": 2,
+            "batch_size": 8,
+            "learning_rate": 0.002,
+        }
+        assert custom_model["deep_details"]["architecture_summary"]
+        assert custom_model["deep_details"]["epoch_curves"]
+
+        metadata_path = tmp_path / "custom-models" / f"{finished_job['model_id']}.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+        assert metadata["artifact"]["serializer"] == "torch"
+        assert metadata["artifact"]["path"] == (
+            f"custom-models/{finished_job['model_id']}.pt"
+        )
+        assert (tmp_path / metadata["artifact"]["path"]).is_file()
+
+        prediction_response = client.post(
+            "/api/predict",
+            json={
+                "model_id": finished_job["model_id"],
+                "canvas": {
+                    "width": 20,
+                    "height": 20,
+                    "pixels": make_digit_one_canvas(),
+                },
+            },
+        )
+
+        assert prediction_response.status_code == 200
+        assert prediction_response.json()["model"]["id"] == finished_job["model_id"]
+
+        delete_response = client.delete(f"/api/models/{finished_job['model_id']}")
+        assert delete_response.status_code == 204
+
+        assert not metadata_path.exists()
+        assert not (tmp_path / metadata["artifact"]["path"]).exists()
+
+
+def test_custom_training_job_supports_custom_cnn_models(tmp_path: Path) -> None:
+    with TestClient(create_app(storage_root=tmp_path)) as client:
+        response = client.post(
+            "/api/training/jobs",
+            json={
+                "model_name": "Classroom CNN",
+                "model_family": "cnn",
+                "file_name": "classroom-train.csv",
+                "csv_text": make_reference_training_csv(samples_per_digit=6),
+                "split": {
+                    "train_ratio": 0.6,
+                    "validation_ratio": 0.2,
+                    "test_ratio": 0.2,
+                },
+                "seed": 41,
+                "hyperparameters": {
+                    "epochs": 2,
+                    "batch_size": 8,
+                    "learning_rate": 0.001,
+                },
+            },
+        )
+
+        assert response.status_code == 202
+
+        finished_job = wait_for_training_job(client, response.json()["job"]["id"])
+        assert finished_job["status"] == "completed"
+
+        models = client.get("/api/models").json()["models"]
+        custom_model = next(
+            model for model in models if model["id"] == finished_job["model_id"]
+        )
+
+        assert custom_model["family"] == "cnn"
+        assert custom_model["training"]["seed"] == 41
+        assert custom_model["training"]["config_snapshot"]["classifier"] == "cnn"
+        assert custom_model["training"]["config_snapshot"]["hyperparameters"] == {
+            "epochs": 2,
+            "batch_size": 8,
+            "learning_rate": 0.001,
+        }
+        assert custom_model["deep_details"]["architecture_summary"]
+        assert custom_model["deep_details"]["epoch_curves"]
+
+        metadata_path = tmp_path / "custom-models" / f"{finished_job['model_id']}.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+        assert metadata["artifact"]["serializer"] == "torch"
+        assert metadata["artifact"]["path"] == (
+            f"custom-models/{finished_job['model_id']}.pt"
+        )
+        assert (tmp_path / metadata["artifact"]["path"]).is_file()
+
+        prediction_response = client.post(
+            "/api/predict",
+            json={
+                "model_id": finished_job["model_id"],
+                "canvas": {
+                    "width": 20,
+                    "height": 20,
+                    "pixels": make_digit_one_canvas(),
+                },
+            },
+        )
+
+        assert prediction_response.status_code == 200
+        assert prediction_response.json()["model"]["id"] == finished_job["model_id"]
+
+        delete_response = client.delete(f"/api/models/{finished_job['model_id']}")
+        assert delete_response.status_code == 204
+
+        assert not metadata_path.exists()
+        assert not (tmp_path / metadata["artifact"]["path"]).exists()
+
+
 def test_custom_training_rejects_a_second_active_job(tmp_path: Path) -> None:
     with TestClient(create_app(storage_root=tmp_path)) as client:
         start_response = client.post(

@@ -32,6 +32,7 @@ from backend.app.reference_model import (
 from backend.app.shipped_classical_models import (
     build_estimator_confidences,
     classify_shipped_classical_artifact,
+    classify_shipped_deep_artifact,
     ensure_shipped_model_artifact,
     is_shipped_classical_model,
     is_shipped_deep_model,
@@ -44,6 +45,7 @@ from backend.app.training_csv import calculate_split_counts, parse_training_csv_
 REGISTRY_FILE_NAME = "models.json"
 JOB_STAGE_DELAY_SECONDS = 0.04
 CLASSICAL_MODEL_FAMILIES = {"knn", "svm", "random-forest"}
+DEEP_MODEL_FAMILIES = {"mlp", "cnn"}
 CUSTOM_CLASSICAL_MODEL_SPECS = {
     "knn": {
         "description": "Custom k-nearest neighbors classifier trained from an uploaded MNIST CSV.",
@@ -63,6 +65,27 @@ CUSTOM_CLASSICAL_MODEL_SPECS = {
         "hyperparameters": {
             "feature_projection": "pca",
         },
+    },
+}
+CUSTOM_DEEP_MODEL_SPECS = {
+    "mlp": {
+        "description": "Custom multilayer perceptron classifier trained from an uploaded MNIST CSV.",
+        "hidden_layers": [128, 64],
+        "architecture_summary": [
+            "Flatten -> Linear(784, 128) -> ReLU",
+            "Linear(128, 64) -> ReLU",
+            "Linear(64, 10)",
+        ],
+    },
+    "cnn": {
+        "description": "Custom convolutional neural network classifier trained from an uploaded MNIST CSV.",
+        "conv_channels": [8, 16],
+        "dense_units": 32,
+        "architecture_summary": [
+            "Conv(1, 8, 3) -> ReLU -> MaxPool",
+            "Conv(8, 16, 3) -> ReLU -> MaxPool",
+            "Flatten -> Linear(784, 32) -> ReLU -> Linear(32, 10)",
+        ],
     },
 }
 
@@ -196,11 +219,28 @@ def predict_available_model(
         )
 
     metadata = load_model_artifact(storage_root, model_id)
-    if str(metadata.get("family", "")).strip() in CLASSICAL_MODEL_FAMILIES:
+    family = str(metadata.get("family", "")).strip()
+    if family in CLASSICAL_MODEL_FAMILIES:
         processed_canvas = preprocess_canvas(width=width, height=height, pixels=pixels)
         predicted_digit, confidences = classify_shipped_classical_artifact(
             metadata=metadata,
             flat_pixels=flatten(processed_canvas),
+            storage_root=storage_root,
+        )
+
+        return {
+            "model": to_public_model_metadata(metadata),
+            "prediction": {
+                "digit": predicted_digit,
+                "confidences": confidences,
+            },
+        }
+
+    if family in DEEP_MODEL_FAMILIES:
+        processed_canvas = preprocess_canvas(width=width, height=height, pixels=pixels)
+        predicted_digit, confidences = classify_shipped_deep_artifact(
+            metadata=metadata,
+            processed_canvas=processed_canvas,
             storage_root=storage_root,
         )
 
@@ -496,7 +536,11 @@ def persist_custom_artifact(
             raise ValueError("Runtime artifact metadata is required for this custom model.")
 
         runtime_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        write_pickle(runtime_artifact_path, runtime_artifact)
+        write_runtime_artifact(
+            path=runtime_artifact_path,
+            metadata=artifact,
+            artifact=runtime_artifact,
+        )
 
     artifact_path = custom_models_root / f"{artifact['id']}.json"
     artifact_path.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
@@ -540,6 +584,20 @@ def build_custom_artifact(
                 hyperparameters=hyperparameters,
             ),
             None,
+        )
+
+    if model_family in DEEP_MODEL_FAMILIES:
+        return build_custom_deep_artifact(
+            model_id=model_id,
+            model_name=model_name,
+            model_family=model_family,
+            file_name=file_name,
+            train_rows=train_rows,
+            validation_rows=validation_rows,
+            test_rows=test_rows,
+            split=split,
+            seed=seed,
+            hyperparameters=hyperparameters,
         )
 
     return build_custom_classical_artifact(
@@ -730,6 +788,156 @@ def build_custom_classical_artifact(
     )
 
 
+def build_custom_deep_artifact(
+    *,
+    model_id: str,
+    model_name: str,
+    model_family: str,
+    file_name: str,
+    train_rows: list[tuple[int, list[int]]],
+    validation_rows: list[tuple[int, list[int]]],
+    test_rows: list[tuple[int, list[int]]],
+    split: dict[str, object],
+    seed: int,
+    hyperparameters: dict[str, object],
+) -> tuple[dict[str, object], dict[str, object]]:
+    from backend.app.shipped_deep_training import (
+        evaluate_module,
+        train_cnn_model,
+        train_mlp_model,
+    )
+
+    train_features, train_labels = preprocess_training_rows(train_rows)
+    validation_features, validation_labels = preprocess_training_rows(validation_rows)
+    test_features, test_labels = preprocess_training_rows(test_rows)
+
+    requested_hyperparameters = build_requested_hyperparameters(
+        model_family=model_family,
+        hyperparameters=hyperparameters,
+    )
+    spec = CUSTOM_DEEP_MODEL_SPECS[model_family]
+
+    if model_family == "mlp":
+        hidden_layers = [int(layer) for layer in spec["hidden_layers"]]
+        module, epoch_curves = train_mlp_model(
+            train_features=train_features,
+            train_labels=train_labels,
+            validation_features=validation_features,
+            validation_labels=validation_labels,
+            hidden_layers=hidden_layers,
+            epochs=int(requested_hyperparameters["epochs"]),
+            batch_size=int(requested_hyperparameters["batch_size"]),
+            learning_rate=float(requested_hyperparameters["learning_rate"]),
+            seed=seed,
+        )
+        metadata_hyperparameters = {
+            **requested_hyperparameters,
+            "hidden_layers": "128 -> 64",
+            "target_size": TARGET_IMAGE_SIZE,
+            "content_box": CONTENT_IMAGE_SIZE,
+            "centering": "center-of-mass",
+        }
+        checkpoint_payload = {
+            "version": 1,
+            "family": "mlp",
+            "input_size": TARGET_IMAGE_SIZE * TARGET_IMAGE_SIZE,
+            "hidden_layers": hidden_layers,
+            "state_dict": module.state_dict(),
+        }
+    else:
+        conv_channels = [int(channel) for channel in spec["conv_channels"]]
+        dense_units = int(spec["dense_units"])
+        module, epoch_curves = train_cnn_model(
+            train_features=train_features,
+            train_labels=train_labels,
+            validation_features=validation_features,
+            validation_labels=validation_labels,
+            conv_channels=conv_channels,
+            dense_units=dense_units,
+            epochs=int(requested_hyperparameters["epochs"]),
+            batch_size=int(requested_hyperparameters["batch_size"]),
+            learning_rate=float(requested_hyperparameters["learning_rate"]),
+            seed=seed,
+        )
+        metadata_hyperparameters = {
+            **requested_hyperparameters,
+            "conv_channels": "8 -> 16",
+            "dense_units": dense_units,
+            "target_size": TARGET_IMAGE_SIZE,
+            "content_box": CONTENT_IMAGE_SIZE,
+            "centering": "center-of-mass",
+        }
+        checkpoint_payload = {
+            "version": 1,
+            "family": "cnn",
+            "conv_channels": conv_channels,
+            "dense_units": dense_units,
+            "state_dict": module.state_dict(),
+        }
+
+    metrics, evaluation_matrix, sample_predictions = evaluate_module(
+        module=module,
+        evaluation_features=test_features or validation_features,
+        evaluation_labels=test_labels or validation_labels,
+        batch_size=int(requested_hyperparameters["batch_size"]),
+    )
+
+    runtime_artifact_path = f"custom-models/{model_id}.pt"
+    return (
+        {
+            "id": model_id,
+            "name": model_name,
+            "kind": "custom",
+            "family": model_family,
+            "version": "1.0.0",
+            "description": spec["description"],
+            "trained_at": now_timestamp(),
+            "input": {
+                "width": CONTENT_IMAGE_SIZE,
+                "height": CONTENT_IMAGE_SIZE,
+                "encoding": "grayscale-intensity",
+            },
+            "dataset": {
+                "source": f"Uploaded CSV: {file_name}",
+                "image_shape": "28x28 grayscale",
+                "train_examples": len(train_rows),
+                "validation_examples": len(validation_rows),
+                "test_examples": len(test_rows),
+            },
+            "metrics": metrics,
+            "hyperparameters": metadata_hyperparameters,
+            "training": {
+                "seed": seed,
+                "config_snapshot": {
+                    "classifier": model_family,
+                    "file_name": file_name,
+                    "split": {
+                        "train_ratio": float(split["train_ratio"]),
+                        "validation_ratio": float(split["validation_ratio"]),
+                        "test_ratio": float(split["test_ratio"]),
+                    },
+                    "hyperparameters": requested_hyperparameters,
+                },
+            },
+            "deep_details": {
+                "architecture_summary": list(spec["architecture_summary"]),
+                "epoch_curves": epoch_curves,
+            },
+            "evaluation": {
+                "confusion_matrix": evaluation_matrix,
+                "sample_predictions": sample_predictions,
+            },
+            "artifact": {
+                "version": 1,
+                "serializer": "torch",
+                "estimator": "torch.nn.Module",
+                "path": runtime_artifact_path,
+            },
+        },
+        checkpoint_payload,
+    )
+
+
 def preprocess_training_rows(
     training_rows: list[tuple[int, list[int]]],
 ) -> tuple[list[list[float]], list[int]]:
@@ -874,6 +1082,13 @@ def build_requested_hyperparameters(
     model_family: str,
     hyperparameters: dict[str, object],
 ) -> dict[str, object]:
+    if model_family in DEEP_MODEL_FAMILIES:
+        return {
+            "epochs": int(hyperparameters["epochs"]),
+            "batch_size": int(hyperparameters["batch_size"]),
+            "learning_rate": round(float(hyperparameters["learning_rate"]), 4),
+        }
+
     if model_family == "knn":
         return {
             "neighbors": int(hyperparameters["neighbors"]),
@@ -917,6 +1132,30 @@ def resolve_runtime_artifact_path(
     return storage_root / artifact_path.replace("\\", "/")
 
 
+def write_runtime_artifact(
+    *,
+    path: Path,
+    metadata: dict[str, object],
+    artifact: object,
+) -> None:
+    artifact_metadata = metadata.get("artifact")
+    serializer = "pickle-gzip"
+    if isinstance(artifact_metadata, dict):
+        serializer = str(artifact_metadata.get("serializer", serializer)).strip()
+
+    if serializer == "torch":
+        import torch
+
+        torch.save(artifact, path)
+        return
+
+    if serializer == "pickle-gzip":
+        write_pickle(path, artifact)
+        return
+
+    raise ValueError(f"Unsupported custom runtime serializer '{serializer}'.")
+
+
 def write_pickle(path: Path, artifact: object) -> None:
     with gzip.open(path, "wb") as artifact_file:
         pickle.dump(artifact, artifact_file)
@@ -934,6 +1173,12 @@ def build_training_stage_label(model_family: str) -> str:
 
     if model_family == "random-forest":
         return "Training Random Forest classifier"
+
+    if model_family == "mlp":
+        return "Training MLP classifier"
+
+    if model_family == "cnn":
+        return "Training CNN classifier"
 
     return "Training classifier"
 

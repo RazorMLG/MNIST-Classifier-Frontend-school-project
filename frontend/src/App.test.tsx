@@ -1148,4 +1148,282 @@ describe("App", () => {
       await screen.findByText(/custom k-nearest neighbors classifier/i),
     ).toBeInTheDocument();
   });
+
+  it("submits custom MLP training and reuses the deep-details tabs", async () => {
+    let trainingRequest: unknown = null;
+    let trainingCompleted = false;
+
+    const builtInModel = {
+      id: "reference-prototype-v1",
+      name: "Reference Prototype",
+      kind: "built-in",
+      input: { width: 20, height: 20 },
+    };
+
+    const customModel = {
+      id: "custom-classroom-mlp",
+      name: "Classroom MLP",
+      kind: "custom",
+      family: "mlp",
+      description:
+        "Custom multilayer perceptron classifier trained from an uploaded MNIST CSV.",
+      trained_at: "2026-04-30T12:00:00Z",
+      metrics: {
+        accuracy: 0.961,
+        macro_precision: 0.96,
+        macro_recall: 0.959,
+        macro_f1: 0.958,
+        avg_inference_ms: 1.2,
+      },
+      dataset: {
+        source: "Uploaded CSV: classroom-train.csv",
+        image_shape: "28x28 grayscale",
+        train_examples: 24,
+        validation_examples: 8,
+        test_examples: 8,
+      },
+      hyperparameters: {
+        epochs: 2,
+        batch_size: 8,
+        learning_rate: 0.002,
+        hidden_layers: "128 -> 64",
+      },
+      training: {
+        seed: 17,
+        config_snapshot: {
+          classifier: "mlp",
+          file_name: "classroom-train.csv",
+          split: {
+            train_ratio: 0.6,
+            validation_ratio: 0.2,
+            test_ratio: 0.2,
+          },
+          hyperparameters: {
+            epochs: 2,
+            batch_size: 8,
+            learning_rate: 0.002,
+          },
+        },
+      },
+      evaluation: {
+        confusion_matrix: Array.from({ length: 10 }, (_, row) =>
+          Array.from({ length: 10 }, (_, column) => (row === column ? 8 : 0)),
+        ),
+        sample_predictions: [{ label: 1, predicted: 1, confidence: 0.99 }],
+      },
+      deep_details: {
+        architecture_summary: [
+          "Flatten -> Linear(784, 128) -> ReLU",
+          "Linear(128, 64) -> ReLU",
+          "Linear(64, 10)",
+        ],
+        epoch_curves: [
+          {
+            epoch: 1,
+            train_loss: 0.41,
+            validation_loss: 0.28,
+            train_accuracy: 0.91,
+            validation_accuracy: 0.9,
+          },
+          {
+            epoch: 2,
+            train_loss: 0.21,
+            validation_loss: 0.17,
+            train_accuracy: 0.95,
+            validation_accuracy: 0.94,
+          },
+        ],
+      },
+      input: { width: 20, height: 20 },
+    };
+
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (input === "/api/health") {
+          return {
+            ok: true,
+            json: async () => ({
+              status: "ok",
+              service: "mnist-backend",
+              storage: {
+                ready: true,
+                root: "O:/Projects/MNIST Projekat/data",
+                directories: ["shipped-models", "custom-models", "registry"],
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/models") {
+          return {
+            ok: true,
+            json: async () => ({
+              models: trainingCompleted
+                ? [builtInModel, customModel]
+                : [builtInModel],
+            }),
+          };
+        }
+
+        if (input === "/api/training/csv-preview") {
+          return {
+            ok: true,
+            json: async () => ({
+              file_name: "classroom-train.csv",
+              dataset: {
+                example_count: 40,
+                feature_count: 784,
+                label_range: { min: 0, max: 9 },
+              },
+              split: {
+                ratios: {
+                  train: 0.6,
+                  validation: 0.2,
+                  test: 0.2,
+                },
+                counts: {
+                  train: 24,
+                  validation: 8,
+                  test: 8,
+                },
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/training/jobs") {
+          trainingRequest = JSON.parse(String(init?.body));
+
+          return {
+            ok: true,
+            status: 202,
+            json: async () => ({
+              job: {
+                id: "job-mlp",
+                model_id: "custom-classroom-mlp",
+                model_name: "Classroom MLP",
+                model_family: "mlp",
+                status: "running",
+                progress: {
+                  percent: 0.6,
+                  stage: "Training MLP classifier",
+                },
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/training/jobs/job-mlp") {
+          trainingCompleted = true;
+
+          return {
+            ok: true,
+            json: async () => ({
+              job: {
+                id: "job-mlp",
+                model_id: "custom-classroom-mlp",
+                model_name: "Classroom MLP",
+                model_family: "mlp",
+                status: "completed",
+                progress: {
+                  percent: 1,
+                  stage: "Training complete",
+                },
+              },
+            }),
+          };
+        }
+
+        throw new Error(`Unexpected fetch call: ${String(input)}`);
+      },
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /training mode/i }),
+    );
+
+    fireEvent.change(screen.getByLabelText(/train split/i), {
+      target: { value: "60" },
+    });
+    fireEvent.change(screen.getByLabelText(/validation split/i), {
+      target: { value: "20" },
+    });
+    fireEvent.change(screen.getByLabelText(/test split/i), {
+      target: { value: "20" },
+    });
+    fireEvent.change(screen.getByLabelText(/training csv/i), {
+      target: {
+        files: [
+          new File([makeTrainingCsv(40)], "classroom-train.csv", {
+            type: "text/csv",
+          }),
+        ],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /preview split/i }));
+    expect(await screen.findByText(/train 24/i)).toBeInTheDocument();
+
+    expect(
+      screen.getByRole("option", { name: /mlp classifier/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /cnn classifier/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/training model/i), {
+      target: { value: "mlp" },
+    });
+    fireEvent.change(screen.getByLabelText(/model name/i), {
+      target: { value: "Classroom MLP" },
+    });
+    fireEvent.change(screen.getByLabelText(/^epochs$/i), {
+      target: { value: "2" },
+    });
+    fireEvent.change(screen.getByLabelText(/batch size/i), {
+      target: { value: "8" },
+    });
+    fireEvent.change(screen.getByLabelText(/learning rate/i), {
+      target: { value: "0.002" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /start training/i }));
+
+    await waitFor(() => {
+      expect(trainingRequest).toMatchObject({
+        model_name: "Classroom MLP",
+        model_family: "mlp",
+        seed: 17,
+        split: {
+          train_ratio: 0.6,
+          validation_ratio: 0.2,
+          test_ratio: 0.2,
+        },
+        hyperparameters: {
+          epochs: 2,
+          batch_size: 8,
+          learning_rate: 0.002,
+        },
+      });
+    });
+
+    expect(
+      await screen.findByText(/classroom mlp is now available in the shared model list/i),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/custom multilayer perceptron classifier/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /deep details/i }));
+
+    expect(screen.getByText(/architecture summary/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/flatten -> linear\(784, 128\) -> relu/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/epoch curves/i)).toBeInTheDocument();
+  });
 });

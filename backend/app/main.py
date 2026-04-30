@@ -70,7 +70,14 @@ class TrainingCsvPreviewRequest(BaseModel):
     split: TrainingSplitPayload
 
 
-TrainingModelFamily = Literal["prototype", "knn", "svm", "random-forest"]
+TrainingModelFamily = Literal[
+    "prototype",
+    "knn",
+    "svm",
+    "random-forest",
+    "mlp",
+    "cnn",
+]
 
 
 class PrototypeTrainingHyperparameters(BaseModel):
@@ -96,6 +103,12 @@ class RandomForestTrainingHyperparameters(BaseModel):
     pca_components: int = Field(ge=4, le=64)
 
 
+class DeepTrainingHyperparameters(BaseModel):
+    epochs: int = Field(ge=1, le=12)
+    batch_size: int = Field(ge=4, le=128)
+    learning_rate: float = Field(gt=0, le=0.05)
+
+
 TRAINING_HYPERPARAMETER_MODELS: dict[
     TrainingModelFamily,
     type[BaseModel],
@@ -104,6 +117,8 @@ TRAINING_HYPERPARAMETER_MODELS: dict[
     "knn": KnnTrainingHyperparameters,
     "svm": SvmTrainingHyperparameters,
     "random-forest": RandomForestTrainingHyperparameters,
+    "mlp": DeepTrainingHyperparameters,
+    "cnn": DeepTrainingHyperparameters,
 }
 
 
