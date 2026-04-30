@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gzip
 import json
+import pickle
 import random
 import re
 import threading
@@ -10,6 +12,13 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sklearn.decomposition import PCA
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import confusion_matrix
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.svm import LinearSVC
+
 from backend.app.reference_model import (
     CONTENT_IMAGE_SIZE,
     REFERENCE_MODEL_ID,
@@ -17,9 +26,12 @@ from backend.app.reference_model import (
     flatten,
     get_digit_prototypes,
     preprocess_canvas,
+    preprocess_mnist_pixels,
     softmax,
 )
 from backend.app.shipped_classical_models import (
+    build_estimator_confidences,
+    classify_shipped_classical_artifact,
     ensure_shipped_model_artifact,
     is_shipped_classical_model,
     is_shipped_deep_model,
@@ -31,6 +43,28 @@ from backend.app.training_csv import calculate_split_counts, parse_training_csv_
 
 REGISTRY_FILE_NAME = "models.json"
 JOB_STAGE_DELAY_SECONDS = 0.04
+CLASSICAL_MODEL_FAMILIES = {"knn", "svm", "random-forest"}
+CUSTOM_CLASSICAL_MODEL_SPECS = {
+    "knn": {
+        "description": "Custom k-nearest neighbors classifier trained from an uploaded MNIST CSV.",
+        "hyperparameters": {
+            "distance_metric": "euclidean",
+            "weighting": "distance",
+        },
+    },
+    "svm": {
+        "description": "Custom linear SVM classifier trained from an uploaded MNIST CSV.",
+        "hyperparameters": {
+            "classifier": "linear-svc",
+        },
+    },
+    "random-forest": {
+        "description": "Custom random forest classifier trained from an uploaded MNIST CSV.",
+        "hyperparameters": {
+            "feature_projection": "pca",
+        },
+    },
+}
 
 
 class ModelConflictError(ValueError):
@@ -109,6 +143,12 @@ def list_available_models(storage_root: Path) -> list[dict[str, object]]:
                 continue
 
             metadata = json.loads(artifact_path.read_text(encoding="utf-8"))
+            runtime_artifact_path = resolve_runtime_artifact_path(
+                storage_root=storage_root,
+                metadata=metadata,
+            )
+            if runtime_artifact_path is not None and not runtime_artifact_path.exists():
+                continue
         models.append(to_public_model_metadata(metadata))
         next_entries.append(entry)
 
@@ -156,6 +196,22 @@ def predict_available_model(
         )
 
     metadata = load_model_artifact(storage_root, model_id)
+    if str(metadata.get("family", "")).strip() in CLASSICAL_MODEL_FAMILIES:
+        processed_canvas = preprocess_canvas(width=width, height=height, pixels=pixels)
+        predicted_digit, confidences = classify_shipped_classical_artifact(
+            metadata=metadata,
+            flat_pixels=flatten(processed_canvas),
+            storage_root=storage_root,
+        )
+
+        return {
+            "model": to_public_model_metadata(metadata),
+            "prediction": {
+                "digit": predicted_digit,
+                "confidences": confidences,
+            },
+        }
+
     artifact = metadata.get("artifact", {})
     prototypes = artifact.get("digit_prototypes")
     if not isinstance(prototypes, list):
@@ -199,8 +255,21 @@ def delete_custom_model(storage_root: Path, model_id: str) -> None:
         raise ModelDeletionError("Only custom models can be deleted.")
 
     artifact_path = storage_root / target_entry["artifact_path"]
+    runtime_artifact_path: Path | None = None
     if artifact_path.exists():
+        try:
+            metadata = json.loads(artifact_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            metadata = {}
+
+        runtime_artifact_path = resolve_runtime_artifact_path(
+            storage_root=storage_root,
+            metadata=metadata,
+        )
         artifact_path.unlink()
+
+    if runtime_artifact_path is not None and runtime_artifact_path.exists():
+        runtime_artifact_path.unlink()
 
     save_model_registry(storage_root, next_entries)
 
@@ -220,6 +289,7 @@ class TrainingJobManager:
         self,
         *,
         model_name: str,
+        model_family: str,
         file_name: str,
         csv_text: str,
         split: dict[str, float],
@@ -249,6 +319,7 @@ class TrainingJobManager:
                 "id": job_id,
                 "model_id": model_id,
                 "model_name": normalized_name,
+                "model_family": model_family,
                 "status": "queued",
                 "progress": {
                     "percent": 0.0,
@@ -269,6 +340,7 @@ class TrainingJobManager:
                     {
                         "model_id": model_id,
                         "model_name": normalized_name,
+                        "model_family": model_family,
                         "file_name": file_name,
                         "csv_text": csv_text,
                         "split": split,
@@ -318,11 +390,16 @@ class TrainingJobManager:
                 seed=int(request["seed"]),
             )
 
-            self._update_job(job_id, percent=0.6, stage="Building digit prototypes")
+            self._update_job(
+                job_id,
+                percent=0.6,
+                stage=build_training_stage_label(str(request["model_family"])),
+            )
             sleep_for_stage(self._shutdown_event)
-            artifact = build_custom_artifact(
+            artifact, runtime_artifact = build_custom_artifact(
                 model_id=str(request["model_id"]),
                 model_name=str(request["model_name"]),
+                model_family=str(request["model_family"]),
                 file_name=str(request["file_name"]),
                 train_rows=train_rows,
                 validation_rows=validation_rows,
@@ -334,7 +411,11 @@ class TrainingJobManager:
 
             self._update_job(job_id, percent=0.9, stage="Persisting model metadata")
             sleep_for_stage(self._shutdown_event)
-            persist_custom_artifact(self._storage_root, artifact)
+            persist_custom_artifact(
+                self._storage_root,
+                artifact,
+                runtime_artifact=runtime_artifact,
+            )
 
             self._update_job(
                 job_id,
@@ -397,9 +478,26 @@ class TrainingJobManager:
                 job["completed_at"] = completed_at
 
 
-def persist_custom_artifact(storage_root: Path, artifact: dict[str, object]) -> None:
+def persist_custom_artifact(
+    storage_root: Path,
+    artifact: dict[str, object],
+    *,
+    runtime_artifact: object | None = None,
+) -> None:
     custom_models_root = storage_root / "custom-models"
     custom_models_root.mkdir(parents=True, exist_ok=True)
+
+    runtime_artifact_path = resolve_runtime_artifact_path(
+        storage_root=storage_root,
+        metadata=artifact,
+    )
+    if runtime_artifact is not None:
+        if runtime_artifact_path is None:
+            raise ValueError("Runtime artifact metadata is required for this custom model.")
+
+        runtime_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        write_pickle(runtime_artifact_path, runtime_artifact)
+
     artifact_path = custom_models_root / f"{artifact['id']}.json"
     artifact_path.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
 
@@ -416,6 +514,49 @@ def persist_custom_artifact(storage_root: Path, artifact: dict[str, object]) -> 
 
 
 def build_custom_artifact(
+    *,
+    model_id: str,
+    model_name: str,
+    model_family: str,
+    file_name: str,
+    train_rows: list[tuple[int, list[int]]],
+    validation_rows: list[tuple[int, list[int]]],
+    test_rows: list[tuple[int, list[int]]],
+    split: dict[str, object],
+    seed: int,
+    hyperparameters: dict[str, object],
+) -> tuple[dict[str, object], object | None]:
+    if model_family == "prototype":
+        return (
+            build_custom_prototype_artifact(
+                model_id=model_id,
+                model_name=model_name,
+                file_name=file_name,
+                train_rows=train_rows,
+                validation_rows=validation_rows,
+                test_rows=test_rows,
+                split=split,
+                seed=seed,
+                hyperparameters=hyperparameters,
+            ),
+            None,
+        )
+
+    return build_custom_classical_artifact(
+        model_id=model_id,
+        model_name=model_name,
+        model_family=model_family,
+        file_name=file_name,
+        train_rows=train_rows,
+        validation_rows=validation_rows,
+        test_rows=test_rows,
+        split=split,
+        seed=seed,
+        hyperparameters=hyperparameters,
+    )
+
+
+def build_custom_prototype_artifact(
     *,
     model_id: str,
     model_name: str,
@@ -495,6 +636,306 @@ def build_custom_artifact(
             "temperature": round(float(hyperparameters["temperature"]), 3),
         },
     }
+
+
+def build_custom_classical_artifact(
+    *,
+    model_id: str,
+    model_name: str,
+    model_family: str,
+    file_name: str,
+    train_rows: list[tuple[int, list[int]]],
+    validation_rows: list[tuple[int, list[int]]],
+    test_rows: list[tuple[int, list[int]]],
+    split: dict[str, object],
+    seed: int,
+    hyperparameters: dict[str, object],
+) -> tuple[dict[str, object], object]:
+    train_features, train_labels = preprocess_training_rows(train_rows)
+    validation_features, validation_labels = preprocess_training_rows(validation_rows)
+    test_features, test_labels = preprocess_training_rows(test_rows)
+
+    estimator = build_classical_estimator(
+        model_family=model_family,
+        hyperparameters=hyperparameters,
+        seed=seed,
+        train_example_count=len(train_features),
+    )
+    estimator.fit(train_features, train_labels)
+
+    metrics, evaluation_matrix, sample_predictions = evaluate_classical_estimator(
+        estimator=estimator,
+        evaluation_features=test_features or validation_features,
+        evaluation_labels=test_labels or validation_labels,
+    )
+
+    spec = CUSTOM_CLASSICAL_MODEL_SPECS[model_family]
+    runtime_artifact_path = f"custom-models/{model_id}.pkl.gz"
+    curated_hyperparameters = build_custom_classical_metadata_hyperparameters(
+        model_family=model_family,
+        hyperparameters=hyperparameters,
+    )
+
+    return (
+        {
+            "id": model_id,
+            "name": model_name,
+            "kind": "custom",
+            "family": model_family,
+            "version": "1.0.0",
+            "description": spec["description"],
+            "trained_at": now_timestamp(),
+            "input": {
+                "width": CONTENT_IMAGE_SIZE,
+                "height": CONTENT_IMAGE_SIZE,
+                "encoding": "grayscale-intensity",
+            },
+            "dataset": {
+                "source": f"Uploaded CSV: {file_name}",
+                "image_shape": "28x28 grayscale",
+                "train_examples": len(train_rows),
+                "validation_examples": len(validation_rows),
+                "test_examples": len(test_rows),
+            },
+            "metrics": metrics,
+            "hyperparameters": curated_hyperparameters,
+            "training": {
+                "seed": seed,
+                "config_snapshot": {
+                    "classifier": model_family,
+                    "file_name": file_name,
+                    "split": {
+                        "train_ratio": float(split["train_ratio"]),
+                        "validation_ratio": float(split["validation_ratio"]),
+                        "test_ratio": float(split["test_ratio"]),
+                    },
+                    "hyperparameters": build_requested_hyperparameters(
+                        model_family=model_family,
+                        hyperparameters=hyperparameters,
+                    ),
+                },
+            },
+            "evaluation": {
+                "confusion_matrix": evaluation_matrix,
+                "sample_predictions": sample_predictions,
+            },
+            "artifact": {
+                "version": 1,
+                "serializer": "pickle-gzip",
+                "estimator": "sklearn.pipeline.Pipeline",
+                "path": runtime_artifact_path,
+            },
+        },
+        estimator,
+    )
+
+
+def preprocess_training_rows(
+    training_rows: list[tuple[int, list[int]]],
+) -> tuple[list[list[float]], list[int]]:
+    return (
+        [preprocess_mnist_pixels(pixels) for _, pixels in training_rows],
+        [label for label, _ in training_rows],
+    )
+
+
+def build_classical_estimator(
+    *,
+    model_family: str,
+    hyperparameters: dict[str, object],
+    seed: int,
+    train_example_count: int,
+):
+    pca_components = int(hyperparameters["pca_components"])
+    max_pca_components = min(train_example_count, CONTENT_IMAGE_SIZE * CONTENT_IMAGE_SIZE)
+    if pca_components > max_pca_components:
+        raise ValueError(
+            f"PCA components ({pca_components}) cannot exceed {max_pca_components} for this training split."
+        )
+
+    if model_family == "knn":
+        neighbors = int(hyperparameters["neighbors"])
+        if neighbors > train_example_count:
+            raise ValueError(
+                f"k-NN neighbors ({neighbors}) cannot exceed the {train_example_count} training examples in this split."
+            )
+
+        return Pipeline(
+            steps=[
+                ("pca", PCA(n_components=pca_components, random_state=seed)),
+                (
+                    "classifier",
+                    KNeighborsClassifier(
+                        n_neighbors=neighbors,
+                        metric="euclidean",
+                        weights="distance",
+                    ),
+                ),
+            ]
+        )
+
+    if model_family == "svm":
+        return Pipeline(
+            steps=[
+                ("pca", PCA(n_components=pca_components, random_state=seed)),
+                (
+                    "classifier",
+                    LinearSVC(
+                        C=float(hyperparameters["regularization"]),
+                        max_iter=int(hyperparameters["max_iter"]),
+                        random_state=seed,
+                    ),
+                ),
+            ]
+        )
+
+    if model_family == "random-forest":
+        return Pipeline(
+            steps=[
+                ("pca", PCA(n_components=pca_components, random_state=seed)),
+                (
+                    "classifier",
+                    RandomForestClassifier(
+                        n_estimators=int(hyperparameters["estimators"]),
+                        max_depth=int(hyperparameters["max_depth"]),
+                        n_jobs=-1,
+                        random_state=seed,
+                    ),
+                ),
+            ]
+        )
+
+    raise ValueError(f"Unsupported custom training family '{model_family}'.")
+
+
+def evaluate_classical_estimator(
+    *,
+    estimator,
+    evaluation_features: list[list[float]],
+    evaluation_labels: list[int],
+) -> tuple[dict[str, float], list[list[int]], list[dict[str, object]]]:
+    if not evaluation_labels:
+        raise ValueError("Custom training requires at least one validation or test example.")
+
+    predicted_digits = [int(digit) for digit in estimator.predict(evaluation_features)]
+    evaluation_matrix = confusion_matrix(
+        evaluation_labels,
+        predicted_digits,
+        labels=list(range(10)),
+    ).tolist()
+
+    sample_predictions = []
+    for label, predicted_digit, feature in zip(
+        evaluation_labels[:4],
+        predicted_digits[:4],
+        evaluation_features[:4],
+    ):
+        confidences = build_estimator_confidences(
+            estimator=estimator,
+            flat_pixels=feature,
+        )
+        sample_predictions.append(
+            {
+                "label": int(label),
+                "predicted": predicted_digit,
+                "confidence": round(max(confidences), 4),
+            }
+        )
+
+    timed_features = evaluation_features[: min(len(evaluation_features), 64)]
+    inference_times = []
+    for feature in timed_features:
+        started_at = time.perf_counter()
+        estimator.predict([feature])
+        inference_times.append((time.perf_counter() - started_at) * 1000)
+
+    return calculate_metrics(evaluation_matrix, inference_times), evaluation_matrix, sample_predictions
+
+
+def build_custom_classical_metadata_hyperparameters(
+    *,
+    model_family: str,
+    hyperparameters: dict[str, object],
+) -> dict[str, object]:
+    return {
+        **CUSTOM_CLASSICAL_MODEL_SPECS[model_family]["hyperparameters"],
+        **build_requested_hyperparameters(
+            model_family=model_family,
+            hyperparameters=hyperparameters,
+        ),
+        "target_size": TARGET_IMAGE_SIZE,
+        "content_box": CONTENT_IMAGE_SIZE,
+        "centering": "center-of-mass",
+    }
+
+
+def build_requested_hyperparameters(
+    *,
+    model_family: str,
+    hyperparameters: dict[str, object],
+) -> dict[str, object]:
+    if model_family == "knn":
+        return {
+            "neighbors": int(hyperparameters["neighbors"]),
+            "pca_components": int(hyperparameters["pca_components"]),
+        }
+
+    if model_family == "svm":
+        return {
+            "regularization": round(float(hyperparameters["regularization"]), 3),
+            "max_iter": int(hyperparameters["max_iter"]),
+            "pca_components": int(hyperparameters["pca_components"]),
+        }
+
+    if model_family == "random-forest":
+        return {
+            "estimators": int(hyperparameters["estimators"]),
+            "max_depth": int(hyperparameters["max_depth"]),
+            "pca_components": int(hyperparameters["pca_components"]),
+        }
+
+    return {
+        "max_examples_per_label": int(hyperparameters["max_examples_per_label"]),
+        "prototype_blend": round(float(hyperparameters["prototype_blend"]), 3),
+        "temperature": round(float(hyperparameters["temperature"]), 3),
+    }
+
+
+def resolve_runtime_artifact_path(
+    *,
+    storage_root: Path,
+    metadata: dict[str, object],
+) -> Path | None:
+    artifact = metadata.get("artifact")
+    if not isinstance(artifact, dict):
+        return None
+
+    artifact_path = artifact.get("path")
+    if not isinstance(artifact_path, str) or not artifact_path.strip():
+        return None
+
+    return storage_root / artifact_path.replace("\\", "/")
+
+
+def write_pickle(path: Path, artifact: object) -> None:
+    with gzip.open(path, "wb") as artifact_file:
+        pickle.dump(artifact, artifact_file)
+
+
+def build_training_stage_label(model_family: str) -> str:
+    if model_family == "prototype":
+        return "Building digit prototypes"
+
+    if model_family == "knn":
+        return "Training k-NN classifier"
+
+    if model_family == "svm":
+        return "Training SVM classifier"
+
+    if model_family == "random-forest":
+        return "Training Random Forest classifier"
+
+    return "Training classifier"
 
 
 def build_digit_prototypes(

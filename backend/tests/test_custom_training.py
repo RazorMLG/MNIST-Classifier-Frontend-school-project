@@ -1,6 +1,8 @@
+import json
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
@@ -53,13 +55,17 @@ def expected_shipped_model_ids() -> list[str]:
 
 
 def wait_for_training_job(client: TestClient, job_id: str) -> dict[str, object]:
-    for _ in range(100):
+    for _ in range(300):
         response = client.get(f"/api/training/jobs/{job_id}")
         assert response.status_code == 200
 
         body = response.json()["job"]
         if body["status"] == "completed":
             return body
+        if body["status"] in {"failed", "cancelled"}:
+            raise AssertionError(
+                f"Training job ended with status '{body['status']}': {body.get('error') or 'no error provided'}"
+            )
 
         time.sleep(0.02)
 
@@ -136,6 +142,159 @@ def test_custom_training_job_creates_and_deletes_a_shared_model_entry(
 
         deleted_models = client.get("/api/models").json()["models"]
         assert [model["id"] for model in deleted_models] == expected_shipped_model_ids()
+
+
+def test_custom_training_job_supports_custom_knn_models(tmp_path: Path) -> None:
+    with TestClient(create_app(storage_root=tmp_path)) as client:
+        response = client.post(
+            "/api/training/jobs",
+            json={
+                "model_name": "Classroom k-NN",
+                "model_family": "knn",
+                "file_name": "classroom-train.csv",
+                "csv_text": make_reference_training_csv(samples_per_digit=6),
+                "split": {
+                    "train_ratio": 0.6,
+                    "validation_ratio": 0.2,
+                    "test_ratio": 0.2,
+                },
+                "seed": 31,
+                "hyperparameters": {
+                    "neighbors": 3,
+                    "pca_components": 16,
+                },
+            },
+        )
+
+        assert response.status_code == 202
+
+        started_job = response.json()["job"]
+        finished_job = wait_for_training_job(client, started_job["id"])
+
+        assert finished_job["status"] == "completed"
+
+        models_response = client.get("/api/models")
+        assert models_response.status_code == 200
+
+        models = models_response.json()["models"]
+        custom_model = next(
+            model for model in models if model["id"] == finished_job["model_id"]
+        )
+
+        assert custom_model["name"] == "Classroom k-NN"
+        assert custom_model["kind"] == "custom"
+        assert custom_model["family"] == "knn"
+        assert custom_model["hyperparameters"]["neighbors"] == 3
+        assert custom_model["hyperparameters"]["pca_components"] == 16
+        assert custom_model["training"]["seed"] == 31
+        assert custom_model["training"]["config_snapshot"]["classifier"] == "knn"
+
+        metadata_path = tmp_path / "custom-models" / f"{finished_job['model_id']}.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+        assert metadata["artifact"]["serializer"] == "pickle-gzip"
+        assert metadata["artifact"]["path"] == (
+            f"custom-models/{finished_job['model_id']}.pkl.gz"
+        )
+        assert (tmp_path / metadata["artifact"]["path"]).is_file()
+
+        prediction_response = client.post(
+            "/api/predict",
+            json={
+                "model_id": finished_job["model_id"],
+                "canvas": {
+                    "width": 20,
+                    "height": 20,
+                    "pixels": make_digit_one_canvas(),
+                },
+            },
+        )
+
+        assert prediction_response.status_code == 200
+        assert prediction_response.json()["model"]["id"] == finished_job["model_id"]
+
+        delete_response = client.delete(f"/api/models/{finished_job['model_id']}")
+        assert delete_response.status_code == 204
+
+        assert not metadata_path.exists()
+        assert not (tmp_path / metadata["artifact"]["path"]).exists()
+
+
+@pytest.mark.parametrize(
+    ("model_family", "model_name", "hyperparameters"),
+    [
+        (
+            "svm",
+            "Classroom SVM",
+            {
+                "regularization": 0.8,
+                "max_iter": 4000,
+                "pca_components": 16,
+            },
+        ),
+        (
+            "random-forest",
+            "Classroom Forest",
+            {
+                "estimators": 48,
+                "max_depth": 10,
+                "pca_components": 16,
+            },
+        ),
+    ],
+)
+def test_custom_training_job_supports_other_classical_model_families(
+    tmp_path: Path,
+    model_family: str,
+    model_name: str,
+    hyperparameters: dict[str, int | float],
+) -> None:
+    with TestClient(create_app(storage_root=tmp_path)) as client:
+        response = client.post(
+            "/api/training/jobs",
+            json={
+                "model_name": model_name,
+                "model_family": model_family,
+                "file_name": "classroom-train.csv",
+                "csv_text": make_reference_training_csv(samples_per_digit=6),
+                "split": {
+                    "train_ratio": 0.6,
+                    "validation_ratio": 0.2,
+                    "test_ratio": 0.2,
+                },
+                "seed": 37,
+                "hyperparameters": hyperparameters,
+            },
+        )
+
+        assert response.status_code == 202
+
+        finished_job = wait_for_training_job(client, response.json()["job"]["id"])
+        assert finished_job["status"] == "completed"
+
+        models = client.get("/api/models").json()["models"]
+        custom_model = next(
+            model for model in models if model["id"] == finished_job["model_id"]
+        )
+
+        assert custom_model["family"] == model_family
+        assert custom_model["training"]["config_snapshot"]["classifier"] == model_family
+        assert custom_model["training"]["seed"] == 37
+
+        prediction_response = client.post(
+            "/api/predict",
+            json={
+                "model_id": finished_job["model_id"],
+                "canvas": {
+                    "width": 20,
+                    "height": 20,
+                    "pixels": make_digit_one_canvas(),
+                },
+            },
+        )
+
+        assert prediction_response.status_code == 200
+        assert prediction_response.json()["model"]["id"] == finished_job["model_id"]
 
 
 def test_custom_training_rejects_a_second_active_job(tmp_path: Path) -> None:

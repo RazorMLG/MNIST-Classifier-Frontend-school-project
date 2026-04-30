@@ -911,4 +911,241 @@ describe("App", () => {
       within(leaderboard).queryByText(/classroom prototype/i),
     ).not.toBeInTheDocument();
   });
+
+  it("submits custom classical training with the selected family and curated hyperparameters", async () => {
+    let trainingRequest: unknown = null;
+    let trainingCompleted = false;
+
+    const builtInModel = {
+      id: "reference-prototype-v1",
+      name: "Reference Prototype",
+      kind: "built-in",
+      input: { width: 20, height: 20 },
+    };
+
+    const customModel = {
+      id: "custom-classroom-knn",
+      name: "Classroom k-NN",
+      kind: "custom",
+      family: "knn",
+      description:
+        "Custom k-nearest neighbors classifier trained from an uploaded MNIST CSV.",
+      trained_at: "2026-04-30T12:00:00Z",
+      metrics: {
+        accuracy: 0.952,
+        macro_precision: 0.951,
+        macro_recall: 0.952,
+        macro_f1: 0.95,
+        avg_inference_ms: 1.6,
+      },
+      dataset: {
+        source: "Uploaded CSV: classroom-train.csv",
+        image_shape: "28x28 grayscale",
+        train_examples: 24,
+        validation_examples: 8,
+        test_examples: 8,
+      },
+      hyperparameters: {
+        neighbors: 3,
+        pca_components: 16,
+        distance_metric: "euclidean",
+        weighting: "distance",
+      },
+      training: {
+        seed: 17,
+        config_snapshot: {
+          classifier: "knn",
+          file_name: "classroom-train.csv",
+          split: {
+            train_ratio: 0.6,
+            validation_ratio: 0.2,
+            test_ratio: 0.2,
+          },
+          hyperparameters: {
+            neighbors: 3,
+            pca_components: 16,
+          },
+        },
+      },
+      evaluation: {
+        confusion_matrix: Array.from({ length: 10 }, (_, row) =>
+          Array.from({ length: 10 }, (_, column) => (row === column ? 8 : 0)),
+        ),
+        sample_predictions: [{ label: 1, predicted: 1, confidence: 0.98 }],
+      },
+      input: { width: 20, height: 20 },
+    };
+
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (input === "/api/health") {
+          return {
+            ok: true,
+            json: async () => ({
+              status: "ok",
+              service: "mnist-backend",
+              storage: {
+                ready: true,
+                root: "O:/Projects/MNIST Projekat/data",
+                directories: ["shipped-models", "custom-models", "registry"],
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/models") {
+          return {
+            ok: true,
+            json: async () => ({
+              models: trainingCompleted
+                ? [builtInModel, customModel]
+                : [builtInModel],
+            }),
+          };
+        }
+
+        if (input === "/api/training/csv-preview") {
+          return {
+            ok: true,
+            json: async () => ({
+              file_name: "classroom-train.csv",
+              dataset: {
+                example_count: 40,
+                feature_count: 784,
+                label_range: { min: 0, max: 9 },
+              },
+              split: {
+                ratios: {
+                  train: 0.6,
+                  validation: 0.2,
+                  test: 0.2,
+                },
+                counts: {
+                  train: 24,
+                  validation: 8,
+                  test: 8,
+                },
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/training/jobs") {
+          trainingRequest = JSON.parse(String(init?.body));
+
+          return {
+            ok: true,
+            status: 202,
+            json: async () => ({
+              job: {
+                id: "job-knn",
+                model_id: "custom-classroom-knn",
+                model_name: "Classroom k-NN",
+                model_family: "knn",
+                status: "running",
+                progress: {
+                  percent: 0.32,
+                  stage: "Training k-NN classifier",
+                },
+              },
+            }),
+          };
+        }
+
+        if (input === "/api/training/jobs/job-knn") {
+          trainingCompleted = true;
+
+          return {
+            ok: true,
+            json: async () => ({
+              job: {
+                id: "job-knn",
+                model_id: "custom-classroom-knn",
+                model_name: "Classroom k-NN",
+                model_family: "knn",
+                status: "completed",
+                progress: {
+                  percent: 1,
+                  stage: "Training complete",
+                },
+              },
+            }),
+          };
+        }
+
+        throw new Error(`Unexpected fetch call: ${String(input)}`);
+      },
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /training mode/i }),
+    );
+
+    fireEvent.change(screen.getByLabelText(/train split/i), {
+      target: { value: "60" },
+    });
+    fireEvent.change(screen.getByLabelText(/validation split/i), {
+      target: { value: "20" },
+    });
+    fireEvent.change(screen.getByLabelText(/test split/i), {
+      target: { value: "20" },
+    });
+    fireEvent.change(screen.getByLabelText(/training csv/i), {
+      target: {
+        files: [
+          new File([makeTrainingCsv(40)], "classroom-train.csv", {
+            type: "text/csv",
+          }),
+        ],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /preview split/i }));
+    expect(await screen.findByText(/train 24/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/training model/i), {
+      target: { value: "knn" },
+    });
+    fireEvent.change(screen.getByLabelText(/model name/i), {
+      target: { value: "Classroom k-NN" },
+    });
+    fireEvent.change(screen.getByLabelText(/^neighbors$/i), {
+      target: { value: "3" },
+    });
+    fireEvent.change(screen.getByLabelText(/pca components/i), {
+      target: { value: "16" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /start training/i }));
+
+    await waitFor(() => {
+      expect(trainingRequest).toMatchObject({
+        model_name: "Classroom k-NN",
+        model_family: "knn",
+        seed: 17,
+        split: {
+          train_ratio: 0.6,
+          validation_ratio: 0.2,
+          test_ratio: 0.2,
+        },
+        hyperparameters: {
+          neighbors: 3,
+          pca_components: 16,
+        },
+      });
+    });
+
+    expect(
+      await screen.findByText(
+        /classroom k-nn is now available in the shared model list/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/custom k-nearest neighbors classifier/i),
+    ).toBeInTheDocument();
+  });
 });

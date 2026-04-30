@@ -179,12 +179,21 @@ type TrainingJobPayload = {
   job: TrainingJob;
 };
 
+type TrainingModelFamily = "prototype" | "knn" | "svm" | "random-forest";
+
 type CustomTrainingForm = {
+  modelFamily: TrainingModelFamily;
   modelName: string;
   seed: number;
   maxExamplesPerLabel: number;
   prototypeBlend: number;
   temperature: number;
+  neighbors: number;
+  pcaComponents: number;
+  regularization: number;
+  maxIter: number;
+  estimators: number;
+  maxDepth: number;
 };
 
 type TrainingJobState =
@@ -201,11 +210,18 @@ const DEFAULT_TRAINING_SPLIT: TrainingSplitForm = {
 };
 
 const DEFAULT_CUSTOM_TRAINING_FORM: CustomTrainingForm = {
+  modelFamily: "prototype",
   modelName: "",
   seed: 17,
   maxExamplesPerLabel: 4,
   prototypeBlend: 0.35,
   temperature: 18,
+  neighbors: 5,
+  pcaComponents: 16,
+  regularization: 1,
+  maxIter: 5000,
+  estimators: 96,
+  maxDepth: 16,
 };
 
 const TRAINING_POLL_INTERVAL_MS = 150;
@@ -341,7 +357,7 @@ export function App() {
     trainingSplit.train + trainingSplit.validation + trainingSplit.test;
   const selectedModelHasDeepDetails = Boolean(
     selectedModel?.deep_details?.architecture_summary?.length ||
-      selectedModel?.deep_details?.epoch_curves?.length,
+    selectedModel?.deep_details?.epoch_curves?.length,
   );
   const canPreviewTrainingSplit =
     bootstrapState.kind === "ready" &&
@@ -458,8 +474,23 @@ export function App() {
     }
   }
 
+  function handleTrainingModelFamilyChange(value: TrainingModelFamily) {
+    setCustomTrainingForm((currentForm) => ({
+      ...currentForm,
+      modelFamily: value,
+    }));
+    setModelDeleteFeedback(null);
+
+    if (
+      trainingJobState.kind !== "running" &&
+      trainingJobState.kind !== "submitting"
+    ) {
+      setTrainingJobState({ kind: "idle" });
+    }
+  }
+
   function handleTrainingSettingChange(
-    key: Exclude<keyof CustomTrainingForm, "modelName">,
+    key: Exclude<keyof CustomTrainingForm, "modelName" | "modelFamily">,
     value: string,
   ) {
     const numericValue = Number(value);
@@ -581,6 +612,7 @@ export function App() {
           },
           body: JSON.stringify({
             model_name: modelName,
+            model_family: customTrainingForm.modelFamily,
             file_name: trainingFile.name,
             csv_text: await readTextFromFile(trainingFile),
             split: {
@@ -589,11 +621,9 @@ export function App() {
               test_ratio: toSplitRatio(trainingSplit.test),
             },
             seed: customTrainingForm.seed,
-            hyperparameters: {
-              max_examples_per_label: customTrainingForm.maxExamplesPerLabel,
-              prototype_blend: customTrainingForm.prototypeBlend,
-              temperature: customTrainingForm.temperature,
-            },
+            hyperparameters: buildCustomTrainingHyperparameters(
+              customTrainingForm,
+            ),
           }),
         },
       );
@@ -893,8 +923,8 @@ export function App() {
               <>
                 <p className="status-copy board-copy">
                   Upload a labeled CSV that matches the bundled MNIST training
-                  schema, then preview how the default or adjusted split ratios
-                  will divide the dataset before training starts.
+                  schema, preview how the split will divide the dataset, then
+                  launch a curated prototype, k-NN, SVM, or Random Forest run.
                 </p>
 
                 <div className="training-intake-grid">
@@ -979,6 +1009,36 @@ export function App() {
                   </div>
 
                   <div className="training-config-grid">
+                    <div className="training-field">
+                      <label
+                        className="field-label"
+                        htmlFor="training-model-family"
+                      >
+                        Training model
+                      </label>
+                      <select
+                        id="training-model-family"
+                        className="model-select"
+                        value={customTrainingForm.modelFamily}
+                        onChange={(event) => {
+                          handleTrainingModelFamilyChange(
+                            event.target.value as TrainingModelFamily,
+                          );
+                        }}
+                      >
+                        <option value="prototype">Reference prototype</option>
+                        <option value="knn">k-NN classifier</option>
+                        <option value="svm">SVM classifier</option>
+                        <option value="random-forest">
+                          Random Forest classifier
+                        </option>
+                      </select>
+                      <p className="helper-copy">
+                        Completed runs reuse the same shared leaderboard and model
+                        picker regardless of family.
+                      </p>
+                    </div>
+
                     <div className="training-field training-field--wide">
                       <label
                         className="field-label"
@@ -1027,91 +1087,317 @@ export function App() {
                     </div>
                   </div>
 
-                  <div className="training-config-grid">
-                    <div className="training-field">
-                      <label
-                        className="field-label"
-                        htmlFor="training-cap-per-label"
-                      >
-                        Examples per label cap
-                      </label>
-                      <input
-                        id="training-cap-per-label"
-                        className="training-input"
-                        type="number"
-                        min="1"
-                        max="5000"
-                        step="1"
-                        value={customTrainingForm.maxExamplesPerLabel}
-                        onChange={(event) => {
-                          handleTrainingSettingChange(
-                            "maxExamplesPerLabel",
-                            event.target.value,
-                          );
-                        }}
-                      />
-                      <p className="helper-copy">
-                        Recommended 4. Ceiling 5000 for the first portable
-                        training slice.
-                      </p>
-                    </div>
+                  {customTrainingForm.modelFamily === "prototype" ? (
+                    <div className="training-config-grid">
+                      <div className="training-field">
+                        <label
+                          className="field-label"
+                          htmlFor="training-cap-per-label"
+                        >
+                          Examples per label cap
+                        </label>
+                        <input
+                          id="training-cap-per-label"
+                          className="training-input"
+                          type="number"
+                          min="1"
+                          max="5000"
+                          step="1"
+                          value={customTrainingForm.maxExamplesPerLabel}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "maxExamplesPerLabel",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 4. Ceiling 5000 for the portable prototype
+                          baseline.
+                        </p>
+                      </div>
 
-                    <div className="training-field">
-                      <label
-                        className="field-label"
-                        htmlFor="training-prototype-blend"
-                      >
-                        Prototype blend
-                      </label>
-                      <input
-                        id="training-prototype-blend"
-                        className="training-input"
-                        type="number"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={customTrainingForm.prototypeBlend}
-                        onChange={(event) => {
-                          handleTrainingSettingChange(
-                            "prototypeBlend",
-                            event.target.value,
-                          );
-                        }}
-                      />
-                      <p className="helper-copy">
-                        Recommended 0.35. Higher blend leans more on the shipped
-                        reference prototype.
-                      </p>
-                    </div>
+                      <div className="training-field">
+                        <label
+                          className="field-label"
+                          htmlFor="training-prototype-blend"
+                        >
+                          Prototype blend
+                        </label>
+                        <input
+                          id="training-prototype-blend"
+                          className="training-input"
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={customTrainingForm.prototypeBlend}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "prototypeBlend",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 0.35. Higher blend leans more on the shipped
+                          reference prototype.
+                        </p>
+                      </div>
 
-                    <div className="training-field">
-                      <label
-                        className="field-label"
-                        htmlFor="training-temperature"
-                      >
-                        Confidence temperature
-                      </label>
-                      <input
-                        id="training-temperature"
-                        className="training-input"
-                        type="number"
-                        min="1"
-                        max="40"
-                        step="1"
-                        value={customTrainingForm.temperature}
-                        onChange={(event) => {
-                          handleTrainingSettingChange(
-                            "temperature",
-                            event.target.value,
-                          );
-                        }}
-                      />
-                      <p className="helper-copy">
-                        Recommended 18. Ceiling 40 to keep confidence scaling
-                        readable.
-                      </p>
+                      <div className="training-field">
+                        <label
+                          className="field-label"
+                          htmlFor="training-temperature"
+                        >
+                          Confidence temperature
+                        </label>
+                        <input
+                          id="training-temperature"
+                          className="training-input"
+                          type="number"
+                          min="1"
+                          max="40"
+                          step="1"
+                          value={customTrainingForm.temperature}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "temperature",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 18. Ceiling 40 to keep confidence scaling
+                          readable.
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
+
+                  {customTrainingForm.modelFamily === "knn" ? (
+                    <div className="training-config-grid">
+                      <div className="training-field">
+                        <label className="field-label" htmlFor="training-neighbors">
+                          Neighbors
+                        </label>
+                        <input
+                          id="training-neighbors"
+                          className="training-input"
+                          type="number"
+                          min="1"
+                          max="15"
+                          step="1"
+                          value={customTrainingForm.neighbors}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "neighbors",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 5. Lower values stay sharper on lightly sized
+                          classroom splits.
+                        </p>
+                      </div>
+
+                      <div className="training-field">
+                        <label
+                          className="field-label"
+                          htmlFor="training-pca-components"
+                        >
+                          PCA components
+                        </label>
+                        <input
+                          id="training-pca-components"
+                          className="training-input"
+                          type="number"
+                          min="4"
+                          max="64"
+                          step="1"
+                          value={customTrainingForm.pcaComponents}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "pcaComponents",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 16. Keeps the feature projection lightweight
+                          for fast iteration.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {customTrainingForm.modelFamily === "svm" ? (
+                    <div className="training-config-grid">
+                      <div className="training-field">
+                        <label
+                          className="field-label"
+                          htmlFor="training-regularization"
+                        >
+                          Regularization
+                        </label>
+                        <input
+                          id="training-regularization"
+                          className="training-input"
+                          type="number"
+                          min="0.1"
+                          max="10"
+                          step="0.1"
+                          value={customTrainingForm.regularization}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "regularization",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 1.0. Higher values fit more aggressively to
+                          the uploaded split.
+                        </p>
+                      </div>
+
+                      <div className="training-field">
+                        <label className="field-label" htmlFor="training-max-iter">
+                          Max iterations
+                        </label>
+                        <input
+                          id="training-max-iter"
+                          className="training-input"
+                          type="number"
+                          min="500"
+                          max="20000"
+                          step="100"
+                          value={customTrainingForm.maxIter}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "maxIter",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 5000. Longer runs can help convergence on
+                          trickier uploaded splits.
+                        </p>
+                      </div>
+
+                      <div className="training-field">
+                        <label
+                          className="field-label"
+                          htmlFor="training-pca-components"
+                        >
+                          PCA components
+                        </label>
+                        <input
+                          id="training-pca-components"
+                          className="training-input"
+                          type="number"
+                          min="4"
+                          max="64"
+                          step="1"
+                          value={customTrainingForm.pcaComponents}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "pcaComponents",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 16. Keeps the linear margin stable on small
+                          classroom datasets.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {customTrainingForm.modelFamily === "random-forest" ? (
+                    <div className="training-config-grid">
+                      <div className="training-field">
+                        <label className="field-label" htmlFor="training-estimators">
+                          Estimators
+                        </label>
+                        <input
+                          id="training-estimators"
+                          className="training-input"
+                          type="number"
+                          min="10"
+                          max="400"
+                          step="1"
+                          value={customTrainingForm.estimators}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "estimators",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 96. More trees improve stability but extend
+                          training time.
+                        </p>
+                      </div>
+
+                      <div className="training-field">
+                        <label className="field-label" htmlFor="training-max-depth">
+                          Max depth
+                        </label>
+                        <input
+                          id="training-max-depth"
+                          className="training-input"
+                          type="number"
+                          min="2"
+                          max="64"
+                          step="1"
+                          value={customTrainingForm.maxDepth}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "maxDepth",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 16. Shallower trees are easier to keep
+                          general on smaller uploads.
+                        </p>
+                      </div>
+
+                      <div className="training-field">
+                        <label
+                          className="field-label"
+                          htmlFor="training-pca-components"
+                        >
+                          PCA components
+                        </label>
+                        <input
+                          id="training-pca-components"
+                          className="training-input"
+                          type="number"
+                          min="4"
+                          max="64"
+                          step="1"
+                          value={customTrainingForm.pcaComponents}
+                          onChange={(event) => {
+                            handleTrainingSettingChange(
+                              "pcaComponents",
+                              event.target.value,
+                            );
+                          }}
+                        />
+                        <p className="helper-copy">
+                          Recommended 16. Keeps the projection compact before the
+                          forest stage.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="control-row">
@@ -1162,7 +1448,7 @@ export function App() {
                 {trainingPreviewState.kind === "idle" ? (
                   <p className="status-copy">
                     Choose a labeled CSV and preview the train, validation, and
-                    test counts before launching the first custom training flow.
+                    test counts before launching a custom training run.
                   </p>
                 ) : null}
 
@@ -1537,9 +1823,7 @@ export function App() {
                     aria-controls="model-details-overview-panel"
                     aria-selected={modelDetailsTab === "overview"}
                     className={`detail-tab ${
-                      modelDetailsTab === "overview"
-                        ? "detail-tab--active"
-                        : ""
+                      modelDetailsTab === "overview" ? "detail-tab--active" : ""
                     }`}
                     id="model-details-overview-tab"
                     onClick={() => {
@@ -1586,7 +1870,10 @@ export function App() {
                       {(
                         selectedModel.deep_details?.architecture_summary ?? []
                       ).map((line, index) => (
-                        <article className="sample-card" key={`${line}-${index}`}>
+                        <article
+                          className="sample-card"
+                          key={`${line}-${index}`}
+                        >
                           <span className="sample-chip">Layer {index + 1}</span>
                           <strong>{line}</strong>
                         </article>
@@ -1620,7 +1907,10 @@ export function App() {
                                 <td>{formatLoss(curve.train_loss)}</td>
                                 <td>{formatLoss(curve.validation_loss)}</td>
                                 <td>
-                                  {formatMetric(curve.train_accuracy, "percent")}
+                                  {formatMetric(
+                                    curve.train_accuracy,
+                                    "percent",
+                                  )}
                                 </td>
                                 <td>
                                   {formatMetric(
@@ -1668,15 +1958,16 @@ export function App() {
                           <dt>Classifier</dt>
                           <dd>
                             {formatClassifierLabel(
-                              selectedModel.training.config_snapshot?.classifier,
+                              selectedModel.training.config_snapshot
+                                ?.classifier,
                             )}
                           </dd>
                         </div>
                         <div>
                           <dt>Uploaded file</dt>
                           <dd>
-                            {selectedModel.training.config_snapshot?.file_name ??
-                              "Pending"}
+                            {selectedModel.training.config_snapshot
+                              ?.file_name ?? "Pending"}
                           </dd>
                         </div>
                         <div>
@@ -1702,7 +1993,10 @@ export function App() {
                       <div>
                         <dt>Accuracy</dt>
                         <dd>
-                          {formatMetric(selectedModel.metrics?.accuracy, "percent")}
+                          {formatMetric(
+                            selectedModel.metrics?.accuracy,
+                            "percent",
+                          )}
                         </dd>
                       </div>
                       <div>
@@ -1726,7 +2020,10 @@ export function App() {
                       <div>
                         <dt>Macro F1</dt>
                         <dd>
-                          {formatMetric(selectedModel.metrics?.macro_f1, "percent")}
+                          {formatMetric(
+                            selectedModel.metrics?.macro_f1,
+                            "percent",
+                          )}
                         </dd>
                       </div>
                       <div>
@@ -1752,7 +2049,9 @@ export function App() {
                       {Object.entries(selectedModel.hyperparameters ?? {}).map(
                         ([key, value]) => (
                           <div className="tag-card" key={key}>
-                            <span className="tag-label">{formatKeyLabel(key)}</span>
+                            <span className="tag-label">
+                              {formatKeyLabel(key)}
+                            </span>
                             <strong>{String(value)}</strong>
                           </div>
                         ),
@@ -1799,19 +2098,21 @@ export function App() {
                       </div>
                     </div>
                     <div className="sample-grid">
-                      {(
-                        selectedModel.evaluation?.sample_predictions ?? []
-                      ).map((sample, index) => (
-                        <article
-                          className="sample-card"
-                          key={`${sample.label}-${index}`}
-                        >
-                          <span className="sample-chip">
-                            Actual {sample.label} predicted {sample.predicted}
-                          </span>
-                          <strong>{formatConfidence(sample.confidence)}</strong>
-                        </article>
-                      ))}
+                      {(selectedModel.evaluation?.sample_predictions ?? []).map(
+                        (sample, index) => (
+                          <article
+                            className="sample-card"
+                            key={`${sample.label}-${index}`}
+                          >
+                            <span className="sample-chip">
+                              Actual {sample.label} predicted {sample.predicted}
+                            </span>
+                            <strong>
+                              {formatConfidence(sample.confidence)}
+                            </strong>
+                          </article>
+                        ),
+                      )}
                     </div>
                   </section>
                 </div>
@@ -2045,7 +2346,7 @@ function formatInputShape(
 
 function formatKeyLabel(key: string) {
   return key
-    .split("_")
+    .split(/[_-]/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 }
@@ -2055,11 +2356,7 @@ function formatModelKind(kind: string) {
 }
 
 function formatClassifierLabel(classifier: string | undefined) {
-  if (classifier === "reference-prototype") {
-    return "Reference prototype";
-  }
-
-  return classifier ? formatKeyLabel(classifier) : "Pending";
+  return classifier ? formatTrainingModelLabel(classifier) : "Pending";
 }
 
 function formatConfiguredSplit(
@@ -2085,25 +2382,120 @@ function formatConfiguredSplit(
 function getCustomTrainingWarnings(form: CustomTrainingForm) {
   const warnings: string[] = [];
 
-  if (form.maxExamplesPerLabel > 1000) {
+  if (form.modelFamily === "prototype") {
+    if (form.maxExamplesPerLabel > 1000) {
+      warnings.push(
+        "Large per-label caps can slow the prototype baseline on classroom hardware.",
+      );
+    }
+
+    if (form.prototypeBlend > 0.75) {
+      warnings.push(
+        "High prototype blend leans heavily on the shipped baseline and can hide dataset differences.",
+      );
+    }
+
+    if (form.temperature > 30) {
+      warnings.push(
+        "Very high confidence temperature can make score gaps look sharper than the underlying distances.",
+      );
+    }
+
+    return warnings;
+  }
+
+  if (form.pcaComponents > 32) {
     warnings.push(
-      "Large per-label caps can slow the reference training slice on classroom hardware.",
+      "Larger PCA projections need more examples and can slow down classroom-size custom runs.",
     );
   }
 
-  if (form.prototypeBlend > 0.75) {
+  if (form.modelFamily === "knn" && form.neighbors > 7) {
     warnings.push(
-      "High prototype blend leans heavily on the shipped baseline and can hide dataset differences.",
+      "Higher neighbor counts smooth predictions more aggressively and can blur similar digits.",
     );
   }
 
-  if (form.temperature > 30) {
-    warnings.push(
-      "Very high confidence temperature can make score gaps look sharper than the underlying distances.",
-    );
+  if (form.modelFamily === "svm") {
+    if (form.regularization > 3) {
+      warnings.push(
+        "Higher SVM regularization values can fit tightly to a small uploaded split.",
+      );
+    }
+
+    if (form.maxIter > 10000) {
+      warnings.push(
+        "Longer SVM iteration budgets can noticeably increase version-one training time.",
+      );
+    }
+  }
+
+  if (form.modelFamily === "random-forest") {
+    if (form.estimators > 200) {
+      warnings.push(
+        "Larger forests improve stability but will push training time up on classroom hardware.",
+      );
+    }
+
+    if (form.maxDepth > 24) {
+      warnings.push(
+        "Very deep trees can overfit small uploaded datasets.",
+      );
+    }
   }
 
   return warnings;
+}
+
+function buildCustomTrainingHyperparameters(form: CustomTrainingForm) {
+  if (form.modelFamily === "knn") {
+    return {
+      neighbors: form.neighbors,
+      pca_components: form.pcaComponents,
+    };
+  }
+
+  if (form.modelFamily === "svm") {
+    return {
+      regularization: form.regularization,
+      max_iter: form.maxIter,
+      pca_components: form.pcaComponents,
+    };
+  }
+
+  if (form.modelFamily === "random-forest") {
+    return {
+      estimators: form.estimators,
+      max_depth: form.maxDepth,
+      pca_components: form.pcaComponents,
+    };
+  }
+
+  return {
+    max_examples_per_label: form.maxExamplesPerLabel,
+    prototype_blend: form.prototypeBlend,
+    temperature: form.temperature,
+  };
+}
+
+function formatTrainingModelLabel(modelFamily: string) {
+  if (modelFamily === "prototype" || modelFamily === "reference-prototype") {
+    return "Reference prototype";
+  }
+
+  if (modelFamily === "knn") {
+    return "k-NN";
+  }
+
+  if (modelFamily === "svm") {
+    return "SVM";
+  }
+
+  if (modelFamily === "random-forest") {
+    return "Random Forest";
+  }
+
+  return formatKeyLabel(modelFamily);
 }
 
 async function readFetchErrorMessage(response: Response, input: string) {

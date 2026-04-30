@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
@@ -69,24 +70,61 @@ class TrainingCsvPreviewRequest(BaseModel):
     split: TrainingSplitPayload
 
 
-class ReferenceTrainingHyperparameters(BaseModel):
+TrainingModelFamily = Literal["prototype", "knn", "svm", "random-forest"]
+
+
+class PrototypeTrainingHyperparameters(BaseModel):
     max_examples_per_label: int = Field(ge=1, le=5000)
     prototype_blend: float = Field(ge=0, le=1)
     temperature: float = Field(gt=0, le=40)
 
 
+class KnnTrainingHyperparameters(BaseModel):
+    neighbors: int = Field(ge=1, le=15)
+    pca_components: int = Field(ge=4, le=64)
+
+
+class SvmTrainingHyperparameters(BaseModel):
+    regularization: float = Field(gt=0, le=10)
+    max_iter: int = Field(ge=500, le=20000)
+    pca_components: int = Field(ge=4, le=64)
+
+
+class RandomForestTrainingHyperparameters(BaseModel):
+    estimators: int = Field(ge=10, le=400)
+    max_depth: int = Field(ge=2, le=64)
+    pca_components: int = Field(ge=4, le=64)
+
+
+TRAINING_HYPERPARAMETER_MODELS: dict[
+    TrainingModelFamily,
+    type[BaseModel],
+] = {
+    "prototype": PrototypeTrainingHyperparameters,
+    "knn": KnnTrainingHyperparameters,
+    "svm": SvmTrainingHyperparameters,
+    "random-forest": RandomForestTrainingHyperparameters,
+}
+
+
 class CustomTrainingRequest(BaseModel):
     model_name: str = Field(min_length=3, max_length=80)
+    model_family: TrainingModelFamily = "prototype"
     file_name: str = Field(min_length=1)
     csv_text: str = Field(min_length=1)
     split: TrainingSplitPayload
     seed: int = Field(ge=0, le=1_000_000)
-    hyperparameters: ReferenceTrainingHyperparameters
+    hyperparameters: dict[str, object]
 
     @model_validator(mode="after")
     def validate_model_name(self) -> "CustomTrainingRequest":
         if not self.model_name.strip():
             raise ValueError("Model name is required.")
+
+        hyperparameter_model = TRAINING_HYPERPARAMETER_MODELS[self.model_family]
+        self.hyperparameters = hyperparameter_model.model_validate(
+            self.hyperparameters
+        ).model_dump()
 
         return self
 
@@ -176,11 +214,12 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
         try:
             job = training_manager.start_job(
                 model_name=request.model_name,
+                model_family=request.model_family,
                 file_name=request.file_name,
                 csv_text=request.csv_text,
                 split=request.split.model_dump(),
                 seed=request.seed,
-                hyperparameters=request.hyperparameters.model_dump(),
+                hyperparameters=request.hyperparameters,
             )
         except JobConflictError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
