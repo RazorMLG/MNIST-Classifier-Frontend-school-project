@@ -301,6 +301,119 @@ describe("App", () => {
     expect(screen.getByText(/sample predictions/i)).toBeInTheDocument();
   });
 
+  it("shows deep-model extras behind tabs inside the details card", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (input === "/api/health") {
+        return {
+          ok: true,
+          json: async () => ({
+            status: "ok",
+            service: "mnist-backend",
+            storage: {
+              ready: true,
+              root: "O:/Projects/MNIST Projekat/data",
+              directories: ["shipped-models", "custom-models", "registry"],
+            },
+          }),
+        };
+      }
+
+      if (input === "/api/models") {
+        return {
+          ok: true,
+          json: async () => ({
+            models: [
+              {
+                id: "cnn-classifier-v1",
+                name: "CNN Classifier",
+                kind: "built-in",
+                description: "Deep model with extra metadata.",
+                trained_at: "2026-04-30T00:00:00Z",
+                metrics: {
+                  accuracy: 0.977,
+                  macro_precision: 0.976,
+                  macro_recall: 0.975,
+                  macro_f1: 0.975,
+                  avg_inference_ms: 2.1,
+                },
+                dataset: {
+                  source: "train.csv",
+                  image_shape: "28x28 grayscale",
+                  train_examples: 48000,
+                  validation_examples: 6000,
+                  test_examples: 6000,
+                },
+                hyperparameters: {
+                  epochs: 4,
+                  batch_size: 32,
+                  learning_rate: 0.001,
+                },
+                evaluation: {
+                  confusion_matrix: Array.from({ length: 10 }, (_, row) =>
+                    Array.from({ length: 10 }, (_, column) =>
+                      row === column ? 100 : 0,
+                    ),
+                  ),
+                  sample_predictions: [
+                    { label: 8, predicted: 8, confidence: 0.99 },
+                  ],
+                },
+                deep_details: {
+                  architecture_summary: [
+                    "Conv(1, 8, 3) -> ReLU -> MaxPool",
+                    "Conv(8, 16, 3) -> ReLU -> MaxPool",
+                    "Flatten -> Linear(784, 32) -> ReLU -> Linear(32, 10)",
+                  ],
+                  epoch_curves: [
+                    {
+                      epoch: 1,
+                      train_loss: 0.42,
+                      validation_loss: 0.31,
+                      train_accuracy: 0.91,
+                      validation_accuracy: 0.9,
+                    },
+                    {
+                      epoch: 2,
+                      train_loss: 0.22,
+                      validation_loss: 0.18,
+                      train_accuracy: 0.95,
+                      validation_accuracy: 0.94,
+                    },
+                  ],
+                },
+                input: { width: 20, height: 20 },
+              },
+            ],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected fetch call: ${String(input)}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("tablist", { name: /model detail sections/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /overview/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.queryByText(/architecture summary/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /deep details/i }));
+
+    expect(screen.getByText(/architecture summary/i)).toBeInTheDocument();
+    expect(screen.getByText(/epoch curves/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/conv\(1, 8, 3\) -> relu -> maxpool/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/94\.0%/i)).toBeInTheDocument();
+  });
+
   it("replaces the canvas with CSV intake and previews an adjusted split", async () => {
     let previewRequest: unknown = null;
 

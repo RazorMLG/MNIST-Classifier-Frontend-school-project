@@ -47,6 +47,8 @@ def expected_shipped_model_ids() -> list[str]:
         "knn-classifier-v1",
         "svm-classifier-v1",
         "random-forest-classifier-v1",
+        "mlp-classifier-v1",
+        "cnn-classifier-v1",
     ]
 
 

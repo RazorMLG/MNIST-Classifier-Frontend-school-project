@@ -3,6 +3,8 @@ import pickle
 from pathlib import Path
 
 import pytest
+import torch
+from torch import nn
 from fastapi.testclient import TestClient
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
@@ -295,6 +297,210 @@ def write_random_forest_fixture_artifact(storage_root: Path, predicted_digit: in
     )
 
 
+def write_mlp_fixture_artifact(storage_root: Path, predicted_digit: int) -> None:
+    shipped_models_root = storage_root / "shipped-models"
+    shipped_models_root.mkdir(parents=True, exist_ok=True)
+
+    model = nn.Sequential(
+        nn.Flatten(),
+        nn.Linear(28 * 28, 16),
+        nn.ReLU(),
+        nn.Linear(16, 10),
+    )
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.zero_()
+        model[3].bias[predicted_digit] = 5.0
+
+    torch.save(
+        {
+            "version": 1,
+            "family": "mlp",
+            "input_size": 28 * 28,
+            "hidden_layers": [16],
+            "state_dict": model.state_dict(),
+        },
+        shipped_models_root / "mlp-classifier-v1.pt",
+    )
+
+    metadata = {
+        "id": "mlp-classifier-v1",
+        "name": "MLP Classifier",
+        "kind": "built-in",
+        "family": "mlp",
+        "version": "1.0.0",
+        "description": "Tiny artifact-backed fixture for shipped MLP integration tests.",
+        "trained_at": "2026-04-30T00:00:00Z",
+        "input": {
+            "width": 20,
+            "height": 20,
+            "encoding": "grayscale-intensity",
+        },
+        "dataset": {
+            "source": "train.csv",
+            "image_shape": "28x28 grayscale",
+            "train_examples": 12,
+            "validation_examples": 2,
+            "test_examples": 2,
+        },
+        "metrics": {
+            "accuracy": 1.0,
+            "macro_precision": 1.0,
+            "macro_recall": 1.0,
+            "macro_f1": 1.0,
+            "avg_inference_ms": 0.2,
+        },
+        "hyperparameters": {
+            "epochs": 1,
+            "batch_size": 4,
+            "learning_rate": 0.01,
+            "target_size": 28,
+            "content_box": 20,
+            "centering": "center-of-mass",
+        },
+        "evaluation": {
+            "confusion_matrix": [[1 if row == column else 0 for column in range(10)] for row in range(10)],
+            "sample_predictions": [
+                {
+                    "label": 1,
+                    "predicted": predicted_digit,
+                    "confidence": 0.99,
+                }
+            ],
+        },
+        "deep_details": {
+            "architecture_summary": [
+                "Flatten -> Linear(784, 16) -> ReLU -> Linear(16, 10)",
+            ],
+            "epoch_curves": [
+                {
+                    "epoch": 1,
+                    "train_loss": 0.12,
+                    "validation_loss": 0.18,
+                    "train_accuracy": 0.98,
+                    "validation_accuracy": 0.96,
+                }
+            ],
+        },
+        "artifact": {
+            "version": 1,
+            "serializer": "torch",
+            "estimator": "torch.nn.Module",
+            "path": "shipped-models/mlp-classifier-v1.pt",
+        },
+    }
+    (shipped_models_root / "mlp-classifier-v1.json").write_text(
+        json.dumps(metadata, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def write_cnn_fixture_artifact(storage_root: Path, predicted_digit: int) -> None:
+    shipped_models_root = storage_root / "shipped-models"
+    shipped_models_root.mkdir(parents=True, exist_ok=True)
+
+    model = nn.Sequential(
+        nn.Conv2d(1, 4, kernel_size=3, padding=1),
+        nn.ReLU(),
+        nn.MaxPool2d(kernel_size=2),
+        nn.Conv2d(4, 8, kernel_size=3, padding=1),
+        nn.ReLU(),
+        nn.MaxPool2d(kernel_size=2),
+        nn.Flatten(),
+        nn.Linear(8 * 7 * 7, 16),
+        nn.ReLU(),
+        nn.Linear(16, 10),
+    )
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.zero_()
+        model[9].bias[predicted_digit] = 5.0
+
+    torch.save(
+        {
+            "version": 1,
+            "family": "cnn",
+            "conv_channels": [4, 8],
+            "dense_units": 16,
+            "state_dict": model.state_dict(),
+        },
+        shipped_models_root / "cnn-classifier-v1.pt",
+    )
+
+    metadata = {
+        "id": "cnn-classifier-v1",
+        "name": "CNN Classifier",
+        "kind": "built-in",
+        "family": "cnn",
+        "version": "1.0.0",
+        "description": "Tiny artifact-backed fixture for shipped CNN integration tests.",
+        "trained_at": "2026-04-30T00:00:00Z",
+        "input": {
+            "width": 20,
+            "height": 20,
+            "encoding": "grayscale-intensity",
+        },
+        "dataset": {
+            "source": "train.csv",
+            "image_shape": "28x28 grayscale",
+            "train_examples": 12,
+            "validation_examples": 2,
+            "test_examples": 2,
+        },
+        "metrics": {
+            "accuracy": 1.0,
+            "macro_precision": 1.0,
+            "macro_recall": 1.0,
+            "macro_f1": 1.0,
+            "avg_inference_ms": 0.2,
+        },
+        "hyperparameters": {
+            "epochs": 1,
+            "batch_size": 4,
+            "learning_rate": 0.01,
+            "target_size": 28,
+            "content_box": 20,
+            "centering": "center-of-mass",
+        },
+        "evaluation": {
+            "confusion_matrix": [[1 if row == column else 0 for column in range(10)] for row in range(10)],
+            "sample_predictions": [
+                {
+                    "label": 1,
+                    "predicted": predicted_digit,
+                    "confidence": 0.99,
+                }
+            ],
+        },
+        "deep_details": {
+            "architecture_summary": [
+                "Conv(1, 4, 3) -> ReLU -> MaxPool",
+                "Conv(4, 8, 3) -> ReLU -> MaxPool",
+                "Flatten -> Linear(392, 16) -> ReLU -> Linear(16, 10)",
+            ],
+            "epoch_curves": [
+                {
+                    "epoch": 1,
+                    "train_loss": 0.08,
+                    "validation_loss": 0.14,
+                    "train_accuracy": 0.99,
+                    "validation_accuracy": 0.97,
+                }
+            ],
+        },
+        "artifact": {
+            "version": 1,
+            "serializer": "torch",
+            "estimator": "torch.nn.Module",
+            "path": "shipped-models/cnn-classifier-v1.pt",
+        },
+    }
+    (shipped_models_root / "cnn-classifier-v1.json").write_text(
+        json.dumps(metadata, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_reference_model_predicts_digit_one_from_canvas(tmp_path: Path) -> None:
     with TestClient(create_app(storage_root=tmp_path)) as client:
         response = client.post(
@@ -404,6 +610,72 @@ def test_random_forest_built_in_uses_artifact_probabilities(tmp_path: Path) -> N
     assert max(prediction["confidences"]) == prediction["confidences"][9]
 
 
+def test_mlp_built_in_uses_torch_artifact_and_exposes_deep_details(tmp_path: Path) -> None:
+    write_mlp_fixture_artifact(tmp_path, predicted_digit=4)
+
+    with TestClient(create_app(storage_root=tmp_path)) as client:
+        models_response = client.get("/api/models")
+        prediction_response = client.post(
+            "/api/predict",
+            json={
+                "model_id": "mlp-classifier-v1",
+                "canvas": {
+                    "width": 20,
+                    "height": 20,
+                    "pixels": make_digit_one_canvas(),
+                },
+            },
+        )
+
+    assert models_response.status_code == 200
+    assert prediction_response.status_code == 200
+
+    mlp_model = next(
+        model for model in models_response.json()["models"] if model["id"] == "mlp-classifier-v1"
+    )
+    prediction = prediction_response.json()
+
+    assert "artifact" not in mlp_model
+    assert mlp_model["deep_details"]["architecture_summary"]
+    assert mlp_model["deep_details"]["epoch_curves"][0]["epoch"] == 1
+    assert prediction["prediction"]["digit"] == 4
+    assert abs(sum(prediction["prediction"]["confidences"]) - 1.0) < 1e-6
+    assert max(prediction["prediction"]["confidences"]) == prediction["prediction"]["confidences"][4]
+
+
+def test_cnn_built_in_uses_torch_artifact_and_exposes_deep_details(tmp_path: Path) -> None:
+    write_cnn_fixture_artifact(tmp_path, predicted_digit=6)
+
+    with TestClient(create_app(storage_root=tmp_path)) as client:
+        models_response = client.get("/api/models")
+        prediction_response = client.post(
+            "/api/predict",
+            json={
+                "model_id": "cnn-classifier-v1",
+                "canvas": {
+                    "width": 20,
+                    "height": 20,
+                    "pixels": make_digit_one_canvas(),
+                },
+            },
+        )
+
+    assert models_response.status_code == 200
+    assert prediction_response.status_code == 200
+
+    cnn_model = next(
+        model for model in models_response.json()["models"] if model["id"] == "cnn-classifier-v1"
+    )
+    prediction = prediction_response.json()
+
+    assert "artifact" not in cnn_model
+    assert len(cnn_model["deep_details"]["architecture_summary"]) == 3
+    assert cnn_model["deep_details"]["epoch_curves"][0]["validation_accuracy"] == 0.97
+    assert prediction["prediction"]["digit"] == 6
+    assert abs(sum(prediction["prediction"]["confidences"]) - 1.0) < 1e-6
+    assert max(prediction["prediction"]["confidences"]) == prediction["prediction"]["confidences"][6]
+
+
 @pytest.mark.parametrize(
     "model_id",
     [
@@ -441,7 +713,7 @@ def test_shipped_classical_models_predict_digit_one_from_canvas(
     assert abs(sum(body["prediction"]["confidences"]) - 1.0) < 1e-6
 
 
-def test_models_lists_all_shipped_classical_models(tmp_path: Path) -> None:
+def test_models_lists_all_shipped_models(tmp_path: Path) -> None:
     with TestClient(create_app(storage_root=tmp_path)) as client:
         response = client.get("/api/models")
 
@@ -455,6 +727,8 @@ def test_models_lists_all_shipped_classical_models(tmp_path: Path) -> None:
         "knn-classifier-v1",
         "svm-classifier-v1",
         "random-forest-classifier-v1",
+        "mlp-classifier-v1",
+        "cnn-classifier-v1",
     ]
 
     for model in models:
@@ -467,10 +741,27 @@ def test_models_lists_all_shipped_classical_models(tmp_path: Path) -> None:
     assert reference_model["hyperparameters"]["prototype_grid_size"] == 20
     assert reference_model["evaluation"]["sample_predictions"][0]["predicted"] == 1
 
-    classical_models = [model for model in models if model["id"] != "reference-prototype-v1"]
+    shipped_models = [model for model in models if model["id"] != "reference-prototype-v1"]
+    classical_models = [
+        model
+        for model in shipped_models
+        if model["id"] in {"knn-classifier-v1", "svm-classifier-v1", "random-forest-classifier-v1"}
+    ]
     for model in classical_models:
         assert model["dataset"]["source"] == "train.csv"
         assert model["training"]["split_seed"] == 17
+        assert "artifact" not in model
+
+    deep_models = [
+        model
+        for model in shipped_models
+        if model["id"] in {"mlp-classifier-v1", "cnn-classifier-v1"}
+    ]
+    for model in deep_models:
+        assert model["dataset"]["source"] == "train.csv"
+        assert model["training"]["split_seed"] == 17
+        assert model["deep_details"]["architecture_summary"]
+        assert model["deep_details"]["epoch_curves"]
         assert "artifact" not in model
 
 

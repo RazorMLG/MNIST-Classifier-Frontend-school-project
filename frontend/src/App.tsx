@@ -62,6 +62,19 @@ type ModelTraining = {
   config_snapshot?: ModelTrainingSnapshot;
 };
 
+type DeepEpochCurve = {
+  epoch: number;
+  train_loss?: number;
+  validation_loss?: number;
+  train_accuracy?: number;
+  validation_accuracy?: number;
+};
+
+type ModelDeepDetails = {
+  architecture_summary?: string[];
+  epoch_curves?: DeepEpochCurve[];
+};
+
 type ModelSummary = {
   id: string;
   name: string;
@@ -74,6 +87,7 @@ type ModelSummary = {
   hyperparameters?: Record<string, number | string>;
   evaluation?: ModelEvaluation;
   training?: ModelTraining;
+  deep_details?: ModelDeepDetails;
   input?: {
     width: number;
     height: number;
@@ -108,6 +122,8 @@ type PredictionState =
   | { kind: "error"; message: string };
 
 type WorkspaceMode = "predict" | "training";
+
+type ModelDetailsTab = "overview" | "deep";
 
 type TrainingSplitForm = {
   train: number;
@@ -224,6 +240,8 @@ export function App() {
     null,
   );
   const [isDeletingModel, setIsDeletingModel] = useState(false);
+  const [modelDetailsTab, setModelDetailsTab] =
+    useState<ModelDetailsTab>("overview");
 
   function applyBootstrapPayload(
     healthPayload: HealthPayload,
@@ -304,6 +322,10 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    setModelDetailsTab("overview");
+  }, [selectedModelId]);
+
   const hasInk = canvasPixels.some((pixel) => pixel > 0);
   const selectedModel =
     bootstrapState.kind === "ready"
@@ -317,6 +339,10 @@ export function App() {
       : [];
   const trainingSplitTotal =
     trainingSplit.train + trainingSplit.validation + trainingSplit.test;
+  const selectedModelHasDeepDetails = Boolean(
+    selectedModel?.deep_details?.architecture_summary?.length ||
+      selectedModel?.deep_details?.epoch_curves?.length,
+  );
   const canPreviewTrainingSplit =
     bootstrapState.kind === "ready" &&
     trainingFile !== null &&
@@ -1501,169 +1527,295 @@ export function App() {
                 </div>
               </dl>
 
-              {selectedModel.training ? (
-                <section className="detail-block">
-                  <div className="panel-heading panel-heading--tight">
-                    <div>
-                      <p className="panel-kicker">Training snapshot</p>
-                      <h3>Saved config and seed</h3>
-                    </div>
-                  </div>
-                  <dl className="details-grid details-grid--compact">
-                    <div>
-                      <dt>Seed</dt>
-                      <dd>{selectedModel.training.seed ?? "Pending"}</dd>
-                    </div>
-                    <div>
-                      <dt>Classifier</dt>
-                      <dd>
-                        {formatClassifierLabel(
-                          selectedModel.training.config_snapshot?.classifier,
-                        )}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Uploaded file</dt>
-                      <dd>
-                        {selectedModel.training.config_snapshot?.file_name ??
-                          "Pending"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Split</dt>
-                      <dd>
-                        {formatConfiguredSplit(
-                          selectedModel.training.config_snapshot?.split,
-                        )}
-                      </dd>
-                    </div>
-                  </dl>
-                </section>
+              {selectedModelHasDeepDetails ? (
+                <div
+                  aria-label="Model detail sections"
+                  className="detail-tabs"
+                  role="tablist"
+                >
+                  <button
+                    aria-controls="model-details-overview-panel"
+                    aria-selected={modelDetailsTab === "overview"}
+                    className={`detail-tab ${
+                      modelDetailsTab === "overview"
+                        ? "detail-tab--active"
+                        : ""
+                    }`}
+                    id="model-details-overview-tab"
+                    onClick={() => {
+                      setModelDetailsTab("overview");
+                    }}
+                    role="tab"
+                    type="button"
+                  >
+                    Overview
+                  </button>
+                  <button
+                    aria-controls="model-details-deep-panel"
+                    aria-selected={modelDetailsTab === "deep"}
+                    className={`detail-tab ${
+                      modelDetailsTab === "deep" ? "detail-tab--active" : ""
+                    }`}
+                    id="model-details-deep-tab"
+                    onClick={() => {
+                      setModelDetailsTab("deep");
+                    }}
+                    role="tab"
+                    type="button"
+                  >
+                    Deep details
+                  </button>
+                </div>
               ) : null}
 
-              <section className="detail-block">
-                <div className="panel-heading panel-heading--tight">
-                  <div>
-                    <p className="panel-kicker">Metrics</p>
-                    <h3>Leaderboard metrics</h3>
-                  </div>
-                </div>
-                <dl className="details-grid details-grid--compact">
-                  <div>
-                    <dt>Accuracy</dt>
-                    <dd>
-                      {formatMetric(selectedModel.metrics?.accuracy, "percent")}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Macro precision</dt>
-                    <dd>
-                      {formatMetric(
-                        selectedModel.metrics?.macro_precision,
-                        "percent",
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Macro recall</dt>
-                    <dd>
-                      {formatMetric(
-                        selectedModel.metrics?.macro_recall,
-                        "percent",
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Macro F1</dt>
-                    <dd>
-                      {formatMetric(selectedModel.metrics?.macro_f1, "percent")}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Inference latency</dt>
-                    <dd>
-                      {formatMetric(
-                        selectedModel.metrics?.avg_inference_ms,
-                        "ms",
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-              </section>
-
-              <section className="detail-block">
-                <div className="panel-heading panel-heading--tight">
-                  <div>
-                    <p className="panel-kicker">Hyperparameters</p>
-                    <h3>Reference configuration</h3>
-                  </div>
-                </div>
-                <div className="tag-grid">
-                  {Object.entries(selectedModel.hyperparameters ?? {}).map(
-                    ([key, value]) => (
-                      <div className="tag-card" key={key}>
-                        <span className="tag-label">{formatKeyLabel(key)}</span>
-                        <strong>{String(value)}</strong>
+              {modelDetailsTab === "deep" && selectedModelHasDeepDetails ? (
+                <div
+                  aria-labelledby="model-details-deep-tab"
+                  className="detail-section"
+                  id="model-details-deep-panel"
+                  role="tabpanel"
+                >
+                  <section className="detail-block">
+                    <div className="panel-heading panel-heading--tight">
+                      <div>
+                        <p className="panel-kicker">Deep details</p>
+                        <h3>Architecture summary</h3>
                       </div>
-                    ),
-                  )}
-                </div>
-              </section>
+                    </div>
+                    <div className="sample-grid">
+                      {(
+                        selectedModel.deep_details?.architecture_summary ?? []
+                      ).map((line, index) => (
+                        <article className="sample-card" key={`${line}-${index}`}>
+                          <span className="sample-chip">Layer {index + 1}</span>
+                          <strong>{line}</strong>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
 
-              <section className="detail-block">
-                <div className="panel-heading panel-heading--tight">
-                  <div>
-                    <p className="panel-kicker">Confusion matrix</p>
-                    <h3>Evaluation breakdown</h3>
-                  </div>
-                </div>
-                <div className="matrix-frame">
-                  <table className="matrix-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">Actual\\Pred</th>
-                        {renderDigitHeaders()}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(selectedModel.evaluation?.confusion_matrix ?? []).map(
-                        (row, rowIndex) => (
-                          <tr key={rowIndex}>
-                            <th scope="row">{rowIndex}</th>
-                            {row.map((value, columnIndex) => (
-                              <td key={columnIndex}>{value}</td>
-                            ))}
+                  <section className="detail-block">
+                    <div className="panel-heading panel-heading--tight">
+                      <div>
+                        <p className="panel-kicker">Epoch curves</p>
+                        <h3>Training progression</h3>
+                      </div>
+                    </div>
+                    <div className="matrix-frame">
+                      <table className="matrix-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Epoch</th>
+                            <th scope="col">Train loss</th>
+                            <th scope="col">Validation loss</th>
+                            <th scope="col">Train accuracy</th>
+                            <th scope="col">Validation accuracy</th>
                           </tr>
+                        </thead>
+                        <tbody>
+                          {(selectedModel.deep_details?.epoch_curves ?? []).map(
+                            (curve) => (
+                              <tr key={curve.epoch}>
+                                <th scope="row">{curve.epoch}</th>
+                                <td>{formatLoss(curve.train_loss)}</td>
+                                <td>{formatLoss(curve.validation_loss)}</td>
+                                <td>
+                                  {formatMetric(curve.train_accuracy, "percent")}
+                                </td>
+                                <td>
+                                  {formatMetric(
+                                    curve.validation_accuracy,
+                                    "percent",
+                                  )}
+                                </td>
+                              </tr>
+                            ),
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                </div>
+              ) : (
+                <div
+                  aria-labelledby={
+                    selectedModelHasDeepDetails
+                      ? "model-details-overview-tab"
+                      : undefined
+                  }
+                  className="detail-section"
+                  id={
+                    selectedModelHasDeepDetails
+                      ? "model-details-overview-panel"
+                      : undefined
+                  }
+                  role={selectedModelHasDeepDetails ? "tabpanel" : undefined}
+                >
+                  {selectedModel.training ? (
+                    <section className="detail-block">
+                      <div className="panel-heading panel-heading--tight">
+                        <div>
+                          <p className="panel-kicker">Training snapshot</p>
+                          <h3>Saved config and seed</h3>
+                        </div>
+                      </div>
+                      <dl className="details-grid details-grid--compact">
+                        <div>
+                          <dt>Seed</dt>
+                          <dd>{selectedModel.training.seed ?? "Pending"}</dd>
+                        </div>
+                        <div>
+                          <dt>Classifier</dt>
+                          <dd>
+                            {formatClassifierLabel(
+                              selectedModel.training.config_snapshot?.classifier,
+                            )}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Uploaded file</dt>
+                          <dd>
+                            {selectedModel.training.config_snapshot?.file_name ??
+                              "Pending"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Split</dt>
+                          <dd>
+                            {formatConfiguredSplit(
+                              selectedModel.training.config_snapshot?.split,
+                            )}
+                          </dd>
+                        </div>
+                      </dl>
+                    </section>
+                  ) : null}
+
+                  <section className="detail-block">
+                    <div className="panel-heading panel-heading--tight">
+                      <div>
+                        <p className="panel-kicker">Metrics</p>
+                        <h3>Leaderboard metrics</h3>
+                      </div>
+                    </div>
+                    <dl className="details-grid details-grid--compact">
+                      <div>
+                        <dt>Accuracy</dt>
+                        <dd>
+                          {formatMetric(selectedModel.metrics?.accuracy, "percent")}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Macro precision</dt>
+                        <dd>
+                          {formatMetric(
+                            selectedModel.metrics?.macro_precision,
+                            "percent",
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Macro recall</dt>
+                        <dd>
+                          {formatMetric(
+                            selectedModel.metrics?.macro_recall,
+                            "percent",
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Macro F1</dt>
+                        <dd>
+                          {formatMetric(selectedModel.metrics?.macro_f1, "percent")}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Inference latency</dt>
+                        <dd>
+                          {formatMetric(
+                            selectedModel.metrics?.avg_inference_ms,
+                            "ms",
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                  </section>
+
+                  <section className="detail-block">
+                    <div className="panel-heading panel-heading--tight">
+                      <div>
+                        <p className="panel-kicker">Hyperparameters</p>
+                        <h3>Reference configuration</h3>
+                      </div>
+                    </div>
+                    <div className="tag-grid">
+                      {Object.entries(selectedModel.hyperparameters ?? {}).map(
+                        ([key, value]) => (
+                          <div className="tag-card" key={key}>
+                            <span className="tag-label">{formatKeyLabel(key)}</span>
+                            <strong>{String(value)}</strong>
+                          </div>
                         ),
                       )}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+                    </div>
+                  </section>
 
-              <section className="detail-block">
-                <div className="panel-heading panel-heading--tight">
-                  <div>
-                    <p className="panel-kicker">Sample predictions</p>
-                    <h3>Held-out examples</h3>
-                  </div>
+                  <section className="detail-block">
+                    <div className="panel-heading panel-heading--tight">
+                      <div>
+                        <p className="panel-kicker">Confusion matrix</p>
+                        <h3>Evaluation breakdown</h3>
+                      </div>
+                    </div>
+                    <div className="matrix-frame">
+                      <table className="matrix-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Actual\\Pred</th>
+                            {renderDigitHeaders()}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(
+                            selectedModel.evaluation?.confusion_matrix ?? []
+                          ).map((row, rowIndex) => (
+                            <tr key={rowIndex}>
+                              <th scope="row">{rowIndex}</th>
+                              {row.map((value, columnIndex) => (
+                                <td key={columnIndex}>{value}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section className="detail-block">
+                    <div className="panel-heading panel-heading--tight">
+                      <div>
+                        <p className="panel-kicker">Sample predictions</p>
+                        <h3>Held-out examples</h3>
+                      </div>
+                    </div>
+                    <div className="sample-grid">
+                      {(
+                        selectedModel.evaluation?.sample_predictions ?? []
+                      ).map((sample, index) => (
+                        <article
+                          className="sample-card"
+                          key={`${sample.label}-${index}`}
+                        >
+                          <span className="sample-chip">
+                            Actual {sample.label} predicted {sample.predicted}
+                          </span>
+                          <strong>{formatConfidence(sample.confidence)}</strong>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
                 </div>
-                <div className="sample-grid">
-                  {(selectedModel.evaluation?.sample_predictions ?? []).map(
-                    (sample, index) => (
-                      <article
-                        className="sample-card"
-                        key={`${sample.label}-${index}`}
-                      >
-                        <span className="sample-chip">
-                          Actual {sample.label} predicted {sample.predicted}
-                        </span>
-                        <strong>{formatConfidence(sample.confidence)}</strong>
-                      </article>
-                    ),
-                  )}
-                </div>
-              </section>
+              )}
             </>
           ) : (
             <p className="status-copy">
@@ -1835,6 +1987,14 @@ function formatMetric(value: number | undefined, mode: "percent" | "ms") {
   }
 
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatLoss(value: number | undefined) {
+  if (value == null) {
+    return "n/a";
+  }
+
+  return value.toFixed(3);
 }
 
 function formatTimestamp(value: string | undefined) {

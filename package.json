@@ -6,7 +6,7 @@
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "node scripts/run-python.mjs -m pytest backend/tests",
     "test:frontend": "npm --prefix frontend run test -- --run",
-    "train:shipped-models": "node scripts/run-python.mjs -m backend.app.shipped_classical_training --dataset train.csv --storage-root data",
+    "train:shipped-models": "node scripts/run-python.mjs -m backend.app.shipped_model_training --dataset train.csv --storage-root data",
     "typecheck": "npm --prefix frontend run typecheck"
   },
   "devDependencies": {

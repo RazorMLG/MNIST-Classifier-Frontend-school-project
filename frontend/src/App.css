@@ -407,6 +407,37 @@ body {
   gap: 0.9rem;
 }
 
+.detail-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.detail-tab {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: rgba(244, 239, 232, 0.88);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.7rem 1rem;
+  transition:
+    transform 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.detail-tab:hover {
+  transform: translateY(-1px);
+}
+
+.detail-tab--active {
+  background: rgba(37, 125, 178, 0.24);
+  border-color: rgba(125, 203, 255, 0.45);
+  color: #dff5ff;
+}
+
 .sort-control {
   display: grid;
   gap: 0.45rem;

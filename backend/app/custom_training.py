@@ -22,7 +22,9 @@ from backend.app.reference_model import (
 from backend.app.shipped_classical_models import (
     ensure_shipped_model_artifact,
     is_shipped_classical_model,
+    is_shipped_deep_model,
     predict_shipped_classical_digit,
+    predict_shipped_deep_digit,
     shipped_model_entries,
 )
 from backend.app.training_csv import calculate_split_counts, parse_training_csv_rows
@@ -137,6 +139,15 @@ def predict_available_model(
 
     if is_shipped_classical_model(model_id):
         return predict_shipped_classical_digit(
+            model_id=model_id,
+            width=width,
+            height=height,
+            pixels=pixels,
+            storage_root=storage_root,
+        )
+
+    if is_shipped_deep_model(model_id):
+        return predict_shipped_deep_digit(
             model_id=model_id,
             width=width,
             height=height,
