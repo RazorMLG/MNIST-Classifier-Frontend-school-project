@@ -78,6 +78,57 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("retries startup when the backend is briefly unavailable", async () => {
+    let healthAttempts = 0;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (input === "/api/health") {
+        healthAttempts += 1;
+
+        if (healthAttempts === 1) {
+          throw new TypeError("Failed to fetch");
+        }
+
+        return {
+          ok: true,
+          json: async () => ({
+            status: "ok",
+            service: "mnist-backend",
+            storage: {
+              ready: true,
+              root: "O:/Projects/MNIST Projekat/data",
+              directories: ["shipped-models", "custom-models", "registry"],
+            },
+          }),
+        };
+      }
+
+      if (input === "/api/models") {
+        return {
+          ok: true,
+          json: async () => ({
+            models: [
+              {
+                id: "reference-prototype-v1",
+                name: "Reference Prototype",
+                kind: "built-in",
+              },
+            ],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected fetch call: ${String(input)}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("Backend ready")).toBeInTheDocument();
+    expect(healthAttempts).toBeGreaterThan(1);
+  });
+
   it("submits a drawn digit to the selected model", async () => {
     let predictRequest: unknown = null;
 

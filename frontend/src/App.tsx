@@ -237,6 +237,8 @@ const DEFAULT_CUSTOM_TRAINING_FORM: CustomTrainingForm = {
 };
 
 const TRAINING_POLL_INTERVAL_MS = 150;
+const BOOTSTRAP_RETRY_ATTEMPTS = 12;
+const BOOTSTRAP_RETRY_DELAY_MS = 250;
 
 export function App() {
   const [bootstrapState, setBootstrapState] = useState<BootstrapState>({
@@ -298,10 +300,7 @@ export function App() {
 
   async function refreshBootstrap(preferredModelId?: string) {
     try {
-      const [healthPayload, modelsPayload] = await Promise.all([
-        fetchJson<HealthPayload>("/api/health"),
-        fetchJson<ModelsPayload>("/api/models"),
-      ]);
+      const { healthPayload, modelsPayload } = await loadBootstrapPayload();
 
       applyBootstrapPayload(healthPayload, modelsPayload, preferredModelId);
       return modelsPayload;
@@ -320,10 +319,7 @@ export function App() {
 
     async function loadAppBootstrap() {
       try {
-        const [healthPayload, modelsPayload] = await Promise.all([
-          fetchJson<HealthPayload>("/api/health"),
-          fetchJson<ModelsPayload>("/api/models"),
-        ]);
+        const { healthPayload, modelsPayload } = await loadBootstrapPayload();
 
         if (!isActive) {
           return;
@@ -2317,6 +2313,42 @@ async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+async function loadBootstrapPayload() {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < BOOTSTRAP_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const [healthPayload, modelsPayload] = await Promise.all([
+        fetchJson<HealthPayload>("/api/health"),
+        fetchJson<ModelsPayload>("/api/models"),
+      ]);
+
+      return { healthPayload, modelsPayload };
+    } catch (error) {
+      lastError = error;
+
+      if (
+        !(error instanceof TypeError) ||
+        attempt === BOOTSTRAP_RETRY_ATTEMPTS - 1
+      ) {
+        break;
+      }
+
+      await delay(BOOTSTRAP_RETRY_DELAY_MS);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Backend check failed.");
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }
 
 async function fetchNoContent(input: string, init?: RequestInit) {
