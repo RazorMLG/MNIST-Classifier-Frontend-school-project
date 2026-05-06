@@ -212,6 +212,8 @@ type TrainingJobState =
   | { kind: "completed"; job: TrainingJob }
   | { kind: "error"; message: string };
 
+type Language = "en" | "sr";
+
 const DEFAULT_TRAINING_SPLIT: TrainingSplitForm = {
   train: 80,
   validation: 10,
@@ -240,7 +242,506 @@ const TRAINING_POLL_INTERVAL_MS = 150;
 const BOOTSTRAP_RETRY_ATTEMPTS = 12;
 const BOOTSTRAP_RETRY_DELAY_MS = 250;
 
+const APP_COPY = {
+  en: {
+    languageButtons: {
+      sr: "Srpski",
+      en: "English",
+    },
+    hero: {
+      eyebrow: "MNIST model catalog",
+      title: "Inspect leaderboard metadata. Score a digit live.",
+      summary:
+        "This tracer bullet keeps the app bootable while exposing model metrics, dataset lineage, and detail metadata in the UI, then reuses the selected model for the existing prediction flow.",
+      statusLoading: "Checking backend",
+      statusReady: "Backend ready",
+      statusError: "Backend unavailable",
+      noteLoading: "Checking backend status and loading model metadata.",
+      noteError: (message: string) =>
+        `The frontend could not reach the backend: ${message}`,
+      noteReady: (count: number) =>
+        `${count} model${count === 1 ? "" : "s"} loaded for inspection and live scoring.`,
+    },
+    workspace: {
+      kicker: "Workspace mode",
+      predictTitle: "Paint a digit sample",
+      trainingTitle: "Upload a labeled MNIST CSV",
+      predictModeButton: "Prediction mode",
+      trainingModeButton: "Training mode",
+    },
+    board: {
+      clear: "Clear board",
+      scoring: "Scoring digit",
+      runPrediction: "Run prediction",
+      predictHelp:
+        "Click or drag across the board. The frontend sends the raw pixel grid and the backend performs centering and scale normalization.",
+      trainingIntro:
+        "Upload a labeled CSV that matches the bundled MNIST training schema, preview how the split will divide the dataset, then launch a curated prototype, k-NN, SVM, Random Forest, MLP, or CNN run.",
+    },
+    training: {
+      csvLabel: "Training CSV",
+      csvSelected: (fileName: string) => `${fileName} selected for preview.`,
+      csvPlaceholder:
+        "Use the labeled training format: label followed by pixel0 through pixel783.",
+      splitTrain: "Train split",
+      splitValidation: "Validation split",
+      splitTest: "Test split",
+      modelLabel: "Training model",
+      modelOptionPrototype: "Reference prototype",
+      modelOptionKnn: "k-NN classifier",
+      modelOptionSvm: "SVM classifier",
+      modelOptionRandomForest: "Random Forest classifier",
+      modelOptionMlp: "MLP classifier",
+      modelOptionCnn: "CNN classifier",
+      modelHelper:
+        "Completed runs reuse the same shared leaderboard and model picker regardless of family.",
+      nameLabel: "Model name",
+      nameHelper:
+        "Version one requires a manual model name. The app does not suggest defaults, and each run lands in the shared leaderboard as its own entry.",
+      seedLabel: "Seed",
+      seedHelper:
+        "Saved with the model for reproducible split and evaluation behavior.",
+      examplesCapLabel: "Examples per label cap",
+      examplesCapHelper:
+        "Recommended 4. Ceiling 5000 for the portable prototype baseline.",
+      prototypeBlendLabel: "Prototype blend",
+      prototypeBlendHelper:
+        "Recommended 0.35. Higher blend leans more on the shipped reference prototype.",
+      confidenceTemperatureLabel: "Confidence temperature",
+      confidenceTemperatureHelper:
+        "Recommended 18. Ceiling 40 to keep confidence scaling readable.",
+      neighborsLabel: "Neighbors",
+      neighborsHelper:
+        "Recommended 5. Lower values stay sharper on lightly sized classroom splits.",
+      pcaComponentsLabel: "PCA components",
+      pcaComponentsHelperKnn:
+        "Recommended 16. Keeps the feature projection lightweight for fast iteration.",
+      regularizationLabel: "Regularization",
+      regularizationHelper:
+        "Recommended 1.0. Higher values fit more aggressively to the uploaded split.",
+      maxIterationsLabel: "Max iterations",
+      maxIterationsHelper:
+        "Recommended 5000. Longer runs can help convergence on trickier uploaded splits.",
+      pcaComponentsHelperSvm:
+        "Recommended 16. Keeps the linear margin stable on small classroom datasets.",
+      estimatorsLabel: "Estimators",
+      estimatorsHelper:
+        "Recommended 96. More trees improve stability but extend training time.",
+      maxDepthLabel: "Max depth",
+      maxDepthHelper:
+        "Recommended 16. Shallower trees are easier to keep general on smaller uploads.",
+      pcaComponentsHelperRandomForest:
+        "Recommended 16. Keeps the projection compact before the forest stage.",
+      epochsLabel: "Epochs",
+      epochsHelper:
+        "Recommended 4. Keep deep custom runs short enough to stay responsive on CPU-only classroom hardware.",
+      batchSizeLabel: "Batch size",
+      batchSizeHelper:
+        "Recommended 32. Smaller batches keep version-one deep training practical on portable hardware.",
+      learningRateLabel: "Learning rate",
+      learningRateHelper: (modelFamily: TrainingModelFamily) =>
+        modelFamily === "mlp"
+          ? "Recommended 0.002 for the fixed MLP stack."
+          : "Recommended 0.001 for the fixed CNN stack.",
+      previewingButton: "Previewing split",
+      previewButton: "Preview split",
+      startingButton: "Starting training",
+      runningButton: "Training in progress",
+      startButton: "Start training",
+      splitTotalWarning: "Split ratios must total 100 before preview.",
+      idleHelp:
+        "Choose a labeled CSV and preview the train, validation, and test counts before launching a custom training run.",
+      previewError: (message: string) => `CSV preview failed: ${message}`,
+      previewLoading: "Validating the CSV schema and calculating split sizes.",
+      previewFile: "File",
+      previewExamples: "Examples",
+      previewFeatures: "Features",
+      previewLabels: "Labels",
+      previewRangeTo: "to",
+      previewTrainExamples: (count: number) => `Train ${count} examples`,
+      previewValidationExamples: (count: number) =>
+        `Validation ${count} examples`,
+      previewTestExamples: (count: number) => `Test ${count} examples`,
+      previewReadyHelp:
+        "Preview is ready. Start training to create a custom model entry without leaving the shared leaderboard screen.",
+      submittingJob: "Submitting the custom training job.",
+      completedJob: (modelName: string) =>
+        `${modelName} is now available in the shared model list.`,
+      failedJob: (message: string) => `Custom training failed: ${message}`,
+      deleteButton: "Delete custom model",
+      deletingButton: "Deleting custom model",
+      validationTrainPositive: "Training split must be greater than zero.",
+      validationPreviewFirst:
+        "Preview the dataset split before starting training.",
+      validationNameRequired:
+        "Model name is required before starting training.",
+      validationDuplicateName: (modelName: string) =>
+        `Model name '${modelName}' is already in use. Choose a unique name.`,
+      fallbackPreviewRequest: "CSV preview request failed.",
+      fallbackTrainingRequest: "Training job request failed.",
+      fallbackTrainingStatus: "Training status request failed.",
+      fallbackFailedJob: (modelName: string) =>
+        `${modelName} did not complete successfully.`,
+      deleteSuccess: (modelName: string) =>
+        `Custom model deleted: ${modelName}.`,
+      deleteError: (message: string) => `Delete failed: ${message}`,
+      fallbackDelete: "Custom model deletion failed.",
+      prototypeWarningLargeCap:
+        "Large per-label caps can slow the prototype baseline on classroom hardware.",
+      prototypeWarningBlend:
+        "High prototype blend leans heavily on the shipped baseline and can hide dataset differences.",
+      prototypeWarningTemperature:
+        "Very high confidence temperature can make score gaps look sharper than the underlying distances.",
+      deepWarningEpochs:
+        "Longer deep runs can noticeably increase training time on classroom hardware.",
+      deepWarningBatchSize:
+        "Very large batch sizes can make small uploaded splits less stable during version-one deep training.",
+      deepWarningLearningRate:
+        "Aggressive learning rates can make custom deep runs unstable or noisy.",
+      pcaWarning:
+        "Larger PCA projections need more examples and can slow down classroom-size custom runs.",
+      knnWarningNeighbors:
+        "Higher neighbor counts smooth predictions more aggressively and can blur similar digits.",
+      svmWarningRegularization:
+        "Higher SVM regularization values can fit tightly to a small uploaded split.",
+      svmWarningMaxIter:
+        "Longer SVM iteration budgets can noticeably increase version-one training time.",
+      forestWarningEstimators:
+        "Larger forests improve stability but will push training time up on classroom hardware.",
+      forestWarningMaxDepth:
+        "Very deep trees can overfit small uploaded datasets.",
+    },
+    leaderboard: {
+      kicker: "Model leaderboard",
+      heading: "Compare available entries",
+      sortLabel: "Sort leaderboard by",
+      accuracy: "Accuracy",
+      macroF1: "Macro F1",
+      inferenceLatency: "Inference latency",
+      modelColumn: "Model",
+      latencyColumn: "Latency",
+      loading:
+        "The model leaderboard will populate after the backend finishes bootstrapping.",
+      unavailable:
+        "The model leaderboard is unavailable until the backend responds.",
+    },
+    modelPicker: {
+      label: "Model",
+      loading: "Loading models",
+      unavailable: "Backend unavailable",
+      empty: "No models available",
+    },
+    details: {
+      kicker: "Model details",
+      emptyTitle: "Select a model",
+      builtIn: "Built-in",
+      custom: "Custom",
+      datasetSource: "Dataset source",
+      trainedAt: "Trained at",
+      datasetSizes: "Dataset sizes",
+      inputShape: "Input shape",
+      overviewTab: "Overview",
+      deepTab: "Deep details",
+      deepKicker: "Deep details",
+      architectureSummary: "Architecture summary",
+      layer: (index: number) => `Layer ${index + 1}`,
+      epochCurvesKicker: "Epoch curves",
+      trainingProgression: "Training progression",
+      epoch: "Epoch",
+      trainLoss: "Train loss",
+      validationLoss: "Validation loss",
+      trainAccuracy: "Train accuracy",
+      validationAccuracy: "Validation accuracy",
+      trainingSnapshotKicker: "Training snapshot",
+      savedConfigAndSeed: "Saved config and seed",
+      seedLabel: "Seed",
+      classifierLabel: "Classifier",
+      uploadedFile: "Uploaded file",
+      splitLabel: "Split",
+      metricsKicker: "Metrics",
+      leaderboardMetrics: "Leaderboard metrics",
+      macroPrecision: "Macro precision",
+      macroRecall: "Macro recall",
+      hyperparametersKicker: "Hyperparameters",
+      referenceConfiguration: "Reference configuration",
+      confusionMatrixKicker: "Confusion matrix",
+      evaluationBreakdown: "Evaluation breakdown",
+      actualPred: "Actual\\Pred",
+      samplePredictionsKicker: "Sample predictions",
+      heldOutExamples: "Held-out examples",
+      samplePrediction: (label: number, predicted: number) =>
+        `Actual ${label} predicted ${predicted}`,
+      emptyHelp:
+        "Select a model from the leaderboard to inspect its metadata and evaluation details.",
+    },
+    prediction: {
+      kicker: "Prediction",
+      title: "Confidence profile",
+      idleHelp:
+        "Paint a digit and run the selected model to see the predicted class and the full digit confidence spread.",
+      error: (message: string) => `Prediction failed: ${message}`,
+      loading:
+        "Normalizing the sketch and scoring it against the selected model.",
+      headline: (modelName: string, digit: number) =>
+        `${modelName} predicts ${digit}`,
+    },
+    common: {
+      pending: "Pending",
+      trainShort: "Train",
+      validationShort: "Val",
+      testShort: "Test",
+    },
+  },
+  sr: {
+    languageButtons: {
+      sr: "Srpski",
+      en: "English",
+    },
+    hero: {
+      eyebrow: "Katalog MNIST modela",
+      title: "Pregledaj metrike modela. Testiraj cifru uzivo.",
+      summary:
+        "Ovaj tracer bullet odrzava aplikaciju pokrenutom dok u interfejs uvodi metrike modela, poreklo skupa podataka i detaljne metapodatke, a zatim koristi izabrani model u postojecem toku predvidjanja.",
+      statusLoading: "Provera backenda",
+      statusReady: "Backend spreman",
+      statusError: "Backend nedostupan",
+      noteLoading: "Proveravam status backenda i ucitavam metapodatke modela.",
+      noteError: (message: string) =>
+        `Frontend nije mogao da pristupi backendu: ${message}`,
+      noteReady: (count: number) =>
+        `${count} model${count === 1 ? "" : "a"} ucitan${count === 1 ? "" : "o"} za pregled i testiranje uzivo.`,
+    },
+    workspace: {
+      kicker: "Rezim rada",
+      predictTitle: "Nacrtaj uzorak cifre",
+      trainingTitle: "Otpremi oznaceni MNIST CSV",
+      predictModeButton: "Predvidjanje",
+      trainingModeButton: "Obuka",
+    },
+    board: {
+      clear: "Obrisi tablu",
+      scoring: "Obradjujem cifru",
+      runPrediction: "Pokreni predvidjanje",
+      predictHelp:
+        "Klikni ili prevuci preko table. Frontend salje sirovu mrezu piksela, a backend radi centriranje i normalizaciju razmere.",
+      trainingIntro:
+        "Otpremi oznaceni CSV koji odgovara ukljucenoj MNIST semi za obuku, pregledaj kako ce podela rasporediti skup podataka, a zatim pokreni odabrani prototip, k-NN, SVM, Random Forest, MLP ili CNN trening.",
+    },
+    training: {
+      csvLabel: "CSV za obuku",
+      csvSelected: (fileName: string) => `${fileName} je izabran za pregled.`,
+      csvPlaceholder:
+        "Koristi oznaceni format za obuku: label, pa zatim pixel0 do pixel783.",
+      splitTrain: "Udeo za obuku",
+      splitValidation: "Udeo za validaciju",
+      splitTest: "Udeo za test",
+      modelLabel: "Model za obuku",
+      modelOptionPrototype: "Referentni prototip",
+      modelOptionKnn: "k-NN klasifikator",
+      modelOptionSvm: "SVM klasifikator",
+      modelOptionRandomForest: "Random Forest klasifikator",
+      modelOptionMlp: "MLP klasifikator",
+      modelOptionCnn: "CNN klasifikator",
+      modelHelper:
+        "Zavrsena pokretanja koriste istu zajednicku rang-listu i birac modela bez obzira na porodicu.",
+      nameLabel: "Naziv modela",
+      nameHelper:
+        "Prva verzija zahteva rucni naziv modela. Aplikacija ne predlaze podrazumevane nazive, a svako pokretanje se pojavljuje kao zasebna stavka na zajednickoj rang-listi.",
+      seedLabel: "Seed",
+      seedHelper: "Cuva se uz model radi ponovljivog deljenja i evaluacije.",
+      examplesCapLabel: "Maksimalno primera po oznaci",
+      examplesCapHelper:
+        "Preporuceno 4. Gornja granica 5000 za prenosivi prototipski bazni model.",
+      prototypeBlendLabel: "Mesanje prototipa",
+      prototypeBlendHelper:
+        "Preporuceno 0.35. Veca vrednost se vise oslanja na isporuceni referentni prototip.",
+      confidenceTemperatureLabel: "Temperatura pouzdanosti",
+      confidenceTemperatureHelper:
+        "Preporuceno 18. Gornja granica 40 da skaliranje pouzdanosti ostane citljivo.",
+      neighborsLabel: "Susedi",
+      neighborsHelper:
+        "Preporuceno 5. Nize vrednosti ostaju ostrije na manjim skupovima iz ucionice.",
+      pcaComponentsLabel: "PCA komponente",
+      pcaComponentsHelperKnn:
+        "Preporuceno 16. Odrzava projekciju obelezja laganom za brzo iteriranje.",
+      regularizationLabel: "Regularizacija",
+      regularizationHelper:
+        "Preporuceno 1.0. Vece vrednosti agresivnije prilagodjavaju model otpremljenoj podeli.",
+      maxIterationsLabel: "Maksimalan broj iteracija",
+      maxIterationsHelper:
+        "Preporuceno 5000. Duzе pokretanje moze pomoci konvergenciji na zahtevnijim podelama.",
+      pcaComponentsHelperSvm:
+        "Preporuceno 16. Odrzava linearnu marginu stabilnom na manjim skupovima iz ucionice.",
+      estimatorsLabel: "Broj estimatora",
+      estimatorsHelper:
+        "Preporuceno 96. Vise stabala poboljsava stabilnost, ali produzava vreme obuke.",
+      maxDepthLabel: "Maksimalna dubina",
+      maxDepthHelper:
+        "Preporuceno 16. Plića stabla je lakse zadrzati opstim na manjim otpremama.",
+      pcaComponentsHelperRandomForest:
+        "Preporuceno 16. Odrzava projekciju kompaktnom pre faze sume.",
+      epochsLabel: "Epohe",
+      epochsHelper:
+        "Preporuceno 4. Neka prilagodjene duboke obuke ostanu dovoljno kratke za odziv na CPU hardveru u ucionici.",
+      batchSizeLabel: "Velicina batch-a",
+      batchSizeHelper:
+        "Preporuceno 32. Manji batch-evi odrzavaju prakticnost duboke obuke u prvoj verziji na prenosivom hardveru.",
+      learningRateLabel: "Stopa ucenja",
+      learningRateHelper: (modelFamily: TrainingModelFamily) =>
+        modelFamily === "mlp"
+          ? "Preporuceno 0.002 za fiksnu MLP arhitekturu."
+          : "Preporuceno 0.001 za fiksnu CNN arhitekturu.",
+      previewingButton: "Pregledam podelu",
+      previewButton: "Pregledaj podelu",
+      startingButton: "Pokrecem obuku",
+      runningButton: "Obuka je u toku",
+      startButton: "Pokreni obuku",
+      splitTotalWarning: "Udeli moraju dati zbir 100 pre pregleda.",
+      idleHelp:
+        "Izaberi oznaceni CSV i pregledaj broj primera za obuku, validaciju i test pre pokretanja prilagodjene obuke.",
+      previewError: (message: string) => `Pregled CSV-a nije uspeo: ${message}`,
+      previewLoading: "Proveravam CSV semu i racunam velicine podela.",
+      previewFile: "Fajl",
+      previewExamples: "Primeri",
+      previewFeatures: "Obelezja",
+      previewLabels: "Oznake",
+      previewRangeTo: "do",
+      previewTrainExamples: (count: number) => `Obuka ${count} primera`,
+      previewValidationExamples: (count: number) =>
+        `Validacija ${count} primera`,
+      previewTestExamples: (count: number) => `Test ${count} primera`,
+      previewReadyHelp:
+        "Pregled je spreman. Pokreni obuku da napravis unos za prilagodjeni model bez napustanja zajednicke rang-liste.",
+      submittingJob: "Saljem posao za prilagodjenu obuku.",
+      completedJob: (modelName: string) =>
+        `${modelName} je sada dostupan na zajednickoj listi modela.`,
+      failedJob: (message: string) =>
+        `Prilagodjena obuka nije uspela: ${message}`,
+      deleteButton: "Obrisi prilagodjeni model",
+      deletingButton: "Brisem prilagodjeni model",
+      validationTrainPositive: "Udeo za obuku mora biti veci od nule.",
+      validationPreviewFirst:
+        "Pregledaj podelu skupa podataka pre pokretanja obuke.",
+      validationNameRequired: "Naziv modela je obavezan pre pokretanja obuke.",
+      validationDuplicateName: (modelName: string) =>
+        `Naziv modela '${modelName}' je vec zauzet. Izaberi jedinstven naziv.`,
+      fallbackPreviewRequest: "Zahtev za pregled CSV-a nije uspeo.",
+      fallbackTrainingRequest: "Zahtev za posao obuke nije uspeo.",
+      fallbackTrainingStatus: "Zahtev za status obuke nije uspeo.",
+      fallbackFailedJob: (modelName: string) =>
+        `${modelName} nije uspesno zavrsio obradu.`,
+      deleteSuccess: (modelName: string) =>
+        `Prilagodjeni model je obrisan: ${modelName}.`,
+      deleteError: (message: string) => `Brisanje nije uspelo: ${message}`,
+      fallbackDelete: "Brisanje prilagodjenog modela nije uspelo.",
+      prototypeWarningLargeCap:
+        "Veliki limit po oznaci moze usporiti prototipski bazni model na hardveru iz ucionice.",
+      prototypeWarningBlend:
+        "Visoka vrednost mesanja prototipa oslanja se na isporuceni bazni model i moze prikriti razlike u skupu podataka.",
+      prototypeWarningTemperature:
+        "Veoma visoka temperatura pouzdanosti moze uciniti razlike u rezultatima ostrijim nego sto stvarne udaljenosti jesu.",
+      deepWarningEpochs:
+        "Duze duboke obuke mogu primetno produziti vreme obuke na hardveru iz ucionice.",
+      deepWarningBatchSize:
+        "Veoma veliki batch-evi mogu uciniti male otpremljene podele manje stabilnim tokom duboke obuke prve verzije.",
+      deepWarningLearningRate:
+        "Agresivne stope ucenja mogu uciniti prilagodjene duboke obuke nestabilnim ili sumovitim.",
+      pcaWarning:
+        "Vece PCA projekcije traze vise primera i mogu usporiti prilagodjena pokretanja na skupovima velicine ucionice.",
+      knnWarningNeighbors:
+        "Veci broj suseda agresivnije izravnava predvidjanja i moze zamutiti slicne cifre.",
+      svmWarningRegularization:
+        "Vece SVM vrednosti regularizacije mogu se usko prilagoditi maloj otpremljenoj podeli.",
+      svmWarningMaxIter:
+        "DuzI budzeti iteracija za SVM mogu primetno produziti vreme obuke prve verzije.",
+      forestWarningEstimators:
+        "Vece sume poboljsavaju stabilnost, ali ce povecati vreme obuke na hardveru iz ucionice.",
+      forestWarningMaxDepth:
+        "Vrlo duboka stabla mogu preprilagoditi male otpremljene skupove podataka.",
+    },
+    leaderboard: {
+      kicker: "Rang-lista modela",
+      heading: "Uporedi dostupne unose",
+      sortLabel: "Sortiraj rang-listu po",
+      accuracy: "Tacnost",
+      macroF1: "Makro F1",
+      inferenceLatency: "Latencija inferencije",
+      modelColumn: "Model",
+      latencyColumn: "Latencija",
+      loading:
+        "Rang-lista modela ce se popuniti kada backend zavrsi podizanje.",
+      unavailable: "Rang-lista modela nije dostupna dok backend ne odgovori.",
+    },
+    modelPicker: {
+      label: "Model",
+      loading: "Ucitavam modele",
+      unavailable: "Backend nedostupan",
+      empty: "Nema dostupnih modela",
+    },
+    details: {
+      kicker: "Detalji modela",
+      emptyTitle: "Izaberi model",
+      builtIn: "Ugradjen",
+      custom: "Prilagodjen",
+      datasetSource: "Izvor skupa podataka",
+      trainedAt: "Treniran",
+      datasetSizes: "Velicine skupa",
+      inputShape: "Ulazni oblik",
+      overviewTab: "Pregled",
+      deepTab: "Duboki detalji",
+      deepKicker: "Duboki detalji",
+      architectureSummary: "Pregled arhitekture",
+      layer: (index: number) => `Sloj ${index + 1}`,
+      epochCurvesKicker: "Krive epoha",
+      trainingProgression: "Napredak obuke",
+      epoch: "Epoha",
+      trainLoss: "Gubitak na obuci",
+      validationLoss: "Gubitak na validaciji",
+      trainAccuracy: "Tacnost na obuci",
+      validationAccuracy: "Tacnost na validaciji",
+      trainingSnapshotKicker: "Snimak obuke",
+      savedConfigAndSeed: "Sacuvana konfiguracija i seed",
+      seedLabel: "Seed",
+      classifierLabel: "Klasifikator",
+      uploadedFile: "Otpremljeni fajl",
+      splitLabel: "Podela",
+      metricsKicker: "Metrike",
+      leaderboardMetrics: "Metrike rang-liste",
+      macroPrecision: "Makro preciznost",
+      macroRecall: "Makro odziv",
+      hyperparametersKicker: "Hiperparametri",
+      referenceConfiguration: "Referentna konfiguracija",
+      confusionMatrixKicker: "Matrica konfuzije",
+      evaluationBreakdown: "Razrada evaluacije",
+      actualPred: "Stvarno\\Pred",
+      samplePredictionsKicker: "Primeri predvidjanja",
+      heldOutExamples: "Zadrzani primeri",
+      samplePrediction: (label: number, predicted: number) =>
+        `Stvarno ${label} predvidjeno ${predicted}`,
+      emptyHelp:
+        "Izaberi model sa rang-liste da pregledas njegove metapodatke i detalje evaluacije.",
+    },
+    prediction: {
+      kicker: "Predvidjanje",
+      title: "Profil pouzdanosti",
+      idleHelp:
+        "Nacrtaj cifru i pokreni izabrani model da vidis predvidjenu klasu i celu raspodelu pouzdanosti po ciframa.",
+      error: (message: string) => `Predvidjanje nije uspelo: ${message}`,
+      loading: "Normalizujem skicu i ocenjujem je izabranim modelom.",
+      headline: (modelName: string, digit: number) =>
+        `${modelName} predvidja ${digit}`,
+    },
+    common: {
+      pending: "Na cekanju",
+      trainShort: "Obuka",
+      validationShort: "Validacija",
+      testShort: "Test",
+    },
+  },
+} as const;
+
 export function App() {
+  const [language, setLanguage] = useState<Language>("sr");
   const [bootstrapState, setBootstrapState] = useState<BootstrapState>({
     kind: "loading",
   });
@@ -371,13 +872,14 @@ export function App() {
     bootstrapState.kind === "ready" &&
     trainingFile !== null &&
     trainingPreviewState.kind !== "loading";
+  const copy = APP_COPY[language];
 
   const readinessLabel =
     bootstrapState.kind === "ready" && bootstrapState.health.storage.ready
-      ? "Backend ready"
+      ? copy.hero.statusReady
       : bootstrapState.kind === "error"
-        ? "Backend unavailable"
-        : "Checking backend";
+        ? copy.hero.statusError
+        : copy.hero.statusLoading;
 
   async function handlePredict() {
     if (!selectedModelId || !hasInk) {
@@ -525,7 +1027,7 @@ export function App() {
     if (trainingSplit.train <= 0) {
       setTrainingPreviewState({
         kind: "error",
-        message: "Training split must be greater than zero.",
+        message: copy.training.validationTrainPositive,
       });
       return;
     }
@@ -533,7 +1035,7 @@ export function App() {
     if (Math.abs(trainingSplitTotal - 100) > 0.001) {
       setTrainingPreviewState({
         kind: "error",
-        message: "Split ratios must total 100 before preview.",
+        message: copy.training.splitTotalWarning,
       });
       return;
     }
@@ -567,7 +1069,7 @@ export function App() {
         message:
           error instanceof Error
             ? error.message
-            : "CSV preview request failed.",
+            : copy.training.fallbackPreviewRequest,
       });
     }
   }
@@ -581,7 +1083,7 @@ export function App() {
     if (!modelName) {
       setTrainingJobState({
         kind: "error",
-        message: "Model name is required before starting training.",
+        message: copy.training.validationNameRequired,
       });
       return;
     }
@@ -589,7 +1091,7 @@ export function App() {
     if (trainingPreviewState.kind !== "ready") {
       setTrainingJobState({
         kind: "error",
-        message: "Preview the dataset split before starting training.",
+        message: copy.training.validationPreviewFirst,
       });
       return;
     }
@@ -602,7 +1104,7 @@ export function App() {
     ) {
       setTrainingJobState({
         kind: "error",
-        message: `Model name '${modelName}' is already in use. Choose a unique name.`,
+        message: copy.training.validationDuplicateName(modelName),
       });
       return;
     }
@@ -648,7 +1150,7 @@ export function App() {
         message:
           error instanceof Error
             ? error.message
-            : "Training job request failed.",
+            : copy.training.fallbackTrainingRequest,
       });
     }
   }
@@ -667,7 +1169,7 @@ export function App() {
       });
       await refreshBootstrap();
 
-      setModelDeleteFeedback(`Custom model deleted: ${selectedModel.name}.`);
+      setModelDeleteFeedback(copy.training.deleteSuccess(selectedModel.name));
 
       if (
         trainingJobState.kind === "completed" &&
@@ -677,11 +1179,9 @@ export function App() {
       }
     } catch (error) {
       setModelDeleteFeedback(
-        `Delete failed: ${
-          error instanceof Error
-            ? error.message
-            : "Custom model deletion failed."
-        }`,
+        copy.training.deleteError(
+          error instanceof Error ? error.message : copy.training.fallbackDelete,
+        ),
       );
     } finally {
       setIsDeletingModel(false);
@@ -697,7 +1197,10 @@ export function App() {
     customTrainingForm.modelName.trim().length > 0 &&
     trainingJobState.kind !== "submitting" &&
     trainingJobState.kind !== "running";
-  const trainingWarnings = getCustomTrainingWarnings(customTrainingForm);
+  const trainingWarnings = getCustomTrainingWarnings(
+    customTrainingForm,
+    language,
+  );
   const activeTrainingJobId =
     trainingJobState.kind === "running" ? trainingJobState.job.id : null;
 
@@ -737,7 +1240,7 @@ export function App() {
             kind: "error",
             message:
               payload.job.error ??
-              `${payload.job.model_name} did not complete successfully.`,
+              copy.training.fallbackFailedJob(payload.job.model_name),
           });
           return;
         }
@@ -753,7 +1256,7 @@ export function App() {
           message:
             error instanceof Error
               ? error.message
-              : "Training status request failed.",
+              : copy.training.fallbackTrainingStatus,
         });
       }
     }
@@ -774,16 +1277,31 @@ export function App() {
     <main className="app-shell">
       <section className="hero-panel">
         <div className="hero-copy">
-          <p className="eyebrow">MNIST model catalog</p>
-          <h1>Inspect leaderboard metadata. Score a digit live.</h1>
-          <p className="summary">
-            This tracer bullet keeps the app bootable while exposing model
-            metrics, dataset lineage, and detail metadata in the UI, then reuses
-            the selected model for the existing prediction flow.
-          </p>
+          <p className="eyebrow">{copy.hero.eyebrow}</p>
+          <h1>{copy.hero.title}</h1>
         </div>
 
         <div className="hero-meta" aria-live="polite">
+          <div className="mode-toggle" role="group" aria-label="Language">
+            <button
+              className={`mode-toggle-button ${
+                language === "sr" ? "mode-toggle-button--active" : ""
+              }`}
+              type="button"
+              onClick={() => setLanguage("sr")}
+            >
+              {copy.languageButtons.sr}
+            </button>
+            <button
+              className={`mode-toggle-button ${
+                language === "en" ? "mode-toggle-button--active" : ""
+              }`}
+              type="button"
+              onClick={() => setLanguage("en")}
+            >
+              {copy.languageButtons.en}
+            </button>
+          </div>
           <span
             className={`status-pill status-pill--${
               bootstrapState.kind === "ready"
@@ -797,12 +1315,10 @@ export function App() {
           </span>
           <p className="hero-note">
             {bootstrapState.kind === "loading"
-              ? "Checking backend status and loading model metadata."
+              ? copy.hero.noteLoading
               : bootstrapState.kind === "error"
-                ? `The frontend could not reach the backend: ${bootstrapState.message}`
-                : `${bootstrapState.models.length} model${
-                    bootstrapState.models.length === 1 ? "" : "s"
-                  } loaded for inspection and live scoring.`}
+                ? copy.hero.noteError(bootstrapState.message)
+                : copy.hero.noteReady(bootstrapState.models.length)}
           </p>
         </div>
       </section>
@@ -812,11 +1328,11 @@ export function App() {
           <section className="board-card">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">Workspace mode</p>
+                <p className="panel-kicker">{copy.workspace.kicker}</p>
                 <h2>
                   {workspaceMode === "predict"
-                    ? "Paint a digit sample"
-                    : "Upload a labeled MNIST CSV"}
+                    ? copy.workspace.predictTitle
+                    : copy.workspace.trainingTitle}
                 </h2>
               </div>
               <div
@@ -833,7 +1349,7 @@ export function App() {
                   type="button"
                   onClick={() => setWorkspaceMode("predict")}
                 >
-                  Prediction mode
+                  {copy.workspace.predictModeButton}
                 </button>
                 <button
                   className={`mode-toggle-button ${
@@ -844,7 +1360,7 @@ export function App() {
                   type="button"
                   onClick={() => setWorkspaceMode("training")}
                 >
-                  Training mode
+                  {copy.workspace.trainingModeButton}
                 </button>
               </div>
             </div>
@@ -857,7 +1373,7 @@ export function App() {
                     type="button"
                     onClick={handleClearBoard}
                   >
-                    Clear board
+                    {copy.board.clear}
                   </button>
                   <button
                     className="primary-button"
@@ -873,15 +1389,13 @@ export function App() {
                     }}
                   >
                     {predictionState.kind === "loading"
-                      ? "Scoring digit"
-                      : "Run prediction"}
+                      ? copy.board.scoring
+                      : copy.board.runPrediction}
                   </button>
                 </div>
 
                 <p className="status-copy board-copy">
-                  Click or drag across the board. The frontend sends the raw
-                  pixel grid and the backend performs centering and scale
-                  normalization.
+                  {copy.board.predictHelp}
                 </p>
 
                 <div className="drawing-stage">
@@ -929,16 +1443,13 @@ export function App() {
             ) : (
               <>
                 <p className="status-copy board-copy">
-                  Upload a labeled CSV that matches the bundled MNIST training
-                  schema, preview how the split will divide the dataset, then
-                  launch a curated prototype, k-NN, SVM, Random Forest, MLP, or
-                  CNN run.
+                  {copy.board.trainingIntro}
                 </p>
 
                 <div className="training-intake-grid">
                   <div className="training-field training-field--wide">
                     <label className="field-label" htmlFor="training-csv">
-                      Training CSV
+                      {copy.training.csvLabel}
                     </label>
                     <input
                       id="training-csv"
@@ -949,15 +1460,15 @@ export function App() {
                     />
                     <p className="helper-copy">
                       {trainingFile
-                        ? `${trainingFile.name} selected for preview.`
-                        : "Use the labeled training format: label followed by pixel0 through pixel783."}
+                        ? copy.training.csvSelected(trainingFile.name)
+                        : copy.training.csvPlaceholder}
                     </p>
                   </div>
 
                   <div className="training-split-grid">
                     <div className="training-field">
                       <label className="field-label" htmlFor="split-train">
-                        Train split
+                        {copy.training.splitTrain}
                       </label>
                       <input
                         id="split-train"
@@ -978,7 +1489,7 @@ export function App() {
 
                     <div className="training-field">
                       <label className="field-label" htmlFor="split-validation">
-                        Validation split
+                        {copy.training.splitValidation}
                       </label>
                       <input
                         id="split-validation"
@@ -999,7 +1510,7 @@ export function App() {
 
                     <div className="training-field">
                       <label className="field-label" htmlFor="split-test">
-                        Test split
+                        {copy.training.splitTest}
                       </label>
                       <input
                         id="split-test"
@@ -1022,7 +1533,7 @@ export function App() {
                         className="field-label"
                         htmlFor="training-model-family"
                       >
-                        Training model
+                        {copy.training.modelLabel}
                       </label>
                       <select
                         id="training-model-family"
@@ -1034,19 +1545,26 @@ export function App() {
                           );
                         }}
                       >
-                        <option value="prototype">Reference prototype</option>
-                        <option value="knn">k-NN classifier</option>
-                        <option value="svm">SVM classifier</option>
-                        <option value="random-forest">
-                          Random Forest classifier
+                        <option value="prototype">
+                          {copy.training.modelOptionPrototype}
                         </option>
-                        <option value="mlp">MLP classifier</option>
-                        <option value="cnn">CNN classifier</option>
+                        <option value="knn">
+                          {copy.training.modelOptionKnn}
+                        </option>
+                        <option value="svm">
+                          {copy.training.modelOptionSvm}
+                        </option>
+                        <option value="random-forest">
+                          {copy.training.modelOptionRandomForest}
+                        </option>
+                        <option value="mlp">
+                          {copy.training.modelOptionMlp}
+                        </option>
+                        <option value="cnn">
+                          {copy.training.modelOptionCnn}
+                        </option>
                       </select>
-                      <p className="helper-copy">
-                        Completed runs reuse the same shared leaderboard and
-                        model picker regardless of family.
-                      </p>
+                      <p className="helper-copy">{copy.training.modelHelper}</p>
                     </div>
 
                     <div className="training-field training-field--wide">
@@ -1054,7 +1572,7 @@ export function App() {
                         className="field-label"
                         htmlFor="training-model-name"
                       >
-                        Model name
+                        {copy.training.nameLabel}
                       </label>
                       <input
                         id="training-model-name"
@@ -1065,16 +1583,12 @@ export function App() {
                           handleTrainingModelNameChange(event.target.value);
                         }}
                       />
-                      <p className="helper-copy">
-                        Version one requires a manual model name. The app does
-                        not suggest defaults, and each run lands in the shared
-                        leaderboard as its own entry.
-                      </p>
+                      <p className="helper-copy">{copy.training.nameHelper}</p>
                     </div>
 
                     <div className="training-field">
                       <label className="field-label" htmlFor="training-seed">
-                        Seed
+                        {copy.training.seedLabel}
                       </label>
                       <input
                         id="training-seed"
@@ -1091,10 +1605,7 @@ export function App() {
                           );
                         }}
                       />
-                      <p className="helper-copy">
-                        Saved with the model for reproducible split and
-                        evaluation behavior.
-                      </p>
+                      <p className="helper-copy">{copy.training.seedHelper}</p>
                     </div>
                   </div>
 
@@ -1105,7 +1616,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-cap-per-label"
                         >
-                          Examples per label cap
+                          {copy.training.examplesCapLabel}
                         </label>
                         <input
                           id="training-cap-per-label"
@@ -1123,8 +1634,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 4. Ceiling 5000 for the portable prototype
-                          baseline.
+                          {copy.training.examplesCapHelper}
                         </p>
                       </div>
 
@@ -1133,7 +1643,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-prototype-blend"
                         >
-                          Prototype blend
+                          {copy.training.prototypeBlendLabel}
                         </label>
                         <input
                           id="training-prototype-blend"
@@ -1151,8 +1661,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 0.35. Higher blend leans more on the
-                          shipped reference prototype.
+                          {copy.training.prototypeBlendHelper}
                         </p>
                       </div>
 
@@ -1161,7 +1670,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-temperature"
                         >
-                          Confidence temperature
+                          {copy.training.confidenceTemperatureLabel}
                         </label>
                         <input
                           id="training-temperature"
@@ -1179,8 +1688,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 18. Ceiling 40 to keep confidence scaling
-                          readable.
+                          {copy.training.confidenceTemperatureHelper}
                         </p>
                       </div>
                     </div>
@@ -1193,7 +1701,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-neighbors"
                         >
-                          Neighbors
+                          {copy.training.neighborsLabel}
                         </label>
                         <input
                           id="training-neighbors"
@@ -1211,8 +1719,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 5. Lower values stay sharper on lightly
-                          sized classroom splits.
+                          {copy.training.neighborsHelper}
                         </p>
                       </div>
 
@@ -1221,7 +1728,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-pca-components"
                         >
-                          PCA components
+                          {copy.training.pcaComponentsLabel}
                         </label>
                         <input
                           id="training-pca-components"
@@ -1239,8 +1746,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 16. Keeps the feature projection
-                          lightweight for fast iteration.
+                          {copy.training.pcaComponentsHelperKnn}
                         </p>
                       </div>
                     </div>
@@ -1253,7 +1759,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-regularization"
                         >
-                          Regularization
+                          {copy.training.regularizationLabel}
                         </label>
                         <input
                           id="training-regularization"
@@ -1271,8 +1777,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 1.0. Higher values fit more aggressively
-                          to the uploaded split.
+                          {copy.training.regularizationHelper}
                         </p>
                       </div>
 
@@ -1281,7 +1786,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-max-iter"
                         >
-                          Max iterations
+                          {copy.training.maxIterationsLabel}
                         </label>
                         <input
                           id="training-max-iter"
@@ -1299,8 +1804,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 5000. Longer runs can help convergence on
-                          trickier uploaded splits.
+                          {copy.training.maxIterationsHelper}
                         </p>
                       </div>
 
@@ -1309,7 +1813,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-pca-components"
                         >
-                          PCA components
+                          {copy.training.pcaComponentsLabel}
                         </label>
                         <input
                           id="training-pca-components"
@@ -1327,8 +1831,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 16. Keeps the linear margin stable on
-                          small classroom datasets.
+                          {copy.training.pcaComponentsHelperSvm}
                         </p>
                       </div>
                     </div>
@@ -1341,7 +1844,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-estimators"
                         >
-                          Estimators
+                          {copy.training.estimatorsLabel}
                         </label>
                         <input
                           id="training-estimators"
@@ -1359,8 +1862,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 96. More trees improve stability but
-                          extend training time.
+                          {copy.training.estimatorsHelper}
                         </p>
                       </div>
 
@@ -1369,7 +1871,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-max-depth"
                         >
-                          Max depth
+                          {copy.training.maxDepthLabel}
                         </label>
                         <input
                           id="training-max-depth"
@@ -1387,8 +1889,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 16. Shallower trees are easier to keep
-                          general on smaller uploads.
+                          {copy.training.maxDepthHelper}
                         </p>
                       </div>
 
@@ -1397,7 +1898,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-pca-components"
                         >
-                          PCA components
+                          {copy.training.pcaComponentsLabel}
                         </label>
                         <input
                           id="training-pca-components"
@@ -1415,8 +1916,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 16. Keeps the projection compact before
-                          the forest stage.
+                          {copy.training.pcaComponentsHelperRandomForest}
                         </p>
                       </div>
                     </div>
@@ -1430,7 +1930,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-epochs"
                         >
-                          Epochs
+                          {copy.training.epochsLabel}
                         </label>
                         <input
                           id="training-epochs"
@@ -1448,8 +1948,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 4. Keep deep custom runs short enough to
-                          stay responsive on CPU-only classroom hardware.
+                          {copy.training.epochsHelper}
                         </p>
                       </div>
 
@@ -1458,7 +1957,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-batch-size"
                         >
-                          Batch size
+                          {copy.training.batchSizeLabel}
                         </label>
                         <input
                           id="training-batch-size"
@@ -1476,8 +1975,7 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended 32. Smaller batches keep version-one deep
-                          training practical on portable hardware.
+                          {copy.training.batchSizeHelper}
                         </p>
                       </div>
 
@@ -1486,7 +1984,7 @@ export function App() {
                           className="field-label"
                           htmlFor="training-learning-rate"
                         >
-                          Learning rate
+                          {copy.training.learningRateLabel}
                         </label>
                         <input
                           id="training-learning-rate"
@@ -1504,10 +2002,9 @@ export function App() {
                           }}
                         />
                         <p className="helper-copy">
-                          Recommended
-                          {customTrainingForm.modelFamily === "mlp"
-                            ? " 0.002 for the fixed MLP stack."
-                            : " 0.001 for the fixed CNN stack."}
+                          {copy.training.learningRateHelper(
+                            customTrainingForm.modelFamily,
+                          )}
                         </p>
                       </div>
                     </div>
@@ -1524,8 +2021,8 @@ export function App() {
                     }}
                   >
                     {trainingPreviewState.kind === "loading"
-                      ? "Previewing split"
-                      : "Preview split"}
+                      ? copy.training.previewingButton
+                      : copy.training.previewButton}
                   </button>
                   <button
                     className="primary-button"
@@ -1536,10 +2033,10 @@ export function App() {
                     }}
                   >
                     {trainingJobState.kind === "submitting"
-                      ? "Starting training"
+                      ? copy.training.startingButton
                       : trainingJobState.kind === "running"
-                        ? "Training in progress"
-                        : "Start training"}
+                        ? copy.training.runningButton
+                        : copy.training.startButton}
                   </button>
                 </div>
 
@@ -1555,38 +2052,33 @@ export function App() {
 
                 {Math.abs(trainingSplitTotal - 100) > 0.001 ? (
                   <p className="status-copy">
-                    Split ratios must total 100 before preview.
+                    {copy.training.splitTotalWarning}
                   </p>
                 ) : null}
 
                 {trainingPreviewState.kind === "idle" ? (
-                  <p className="status-copy">
-                    Choose a labeled CSV and preview the train, validation, and
-                    test counts before launching a custom training run.
-                  </p>
+                  <p className="status-copy">{copy.training.idleHelp}</p>
                 ) : null}
 
                 {trainingPreviewState.kind === "error" ? (
                   <p className="status-copy">
-                    CSV preview failed: {trainingPreviewState.message}
+                    {copy.training.previewError(trainingPreviewState.message)}
                   </p>
                 ) : null}
 
                 {trainingPreviewState.kind === "loading" ? (
-                  <p className="status-copy">
-                    Validating the CSV schema and calculating split sizes.
-                  </p>
+                  <p className="status-copy">{copy.training.previewLoading}</p>
                 ) : null}
 
                 {trainingPreviewState.kind === "ready" ? (
                   <>
                     <dl className="details-grid details-grid--compact">
                       <div>
-                        <dt>File</dt>
+                        <dt>{copy.training.previewFile}</dt>
                         <dd>{trainingPreviewState.payload.file_name}</dd>
                       </div>
                       <div>
-                        <dt>Examples</dt>
+                        <dt>{copy.training.previewExamples}</dt>
                         <dd>
                           {formatCount(
                             trainingPreviewState.payload.dataset.example_count,
@@ -1594,7 +2086,7 @@ export function App() {
                         </dd>
                       </div>
                       <div>
-                        <dt>Features</dt>
+                        <dt>{copy.training.previewFeatures}</dt>
                         <dd>
                           {formatCount(
                             trainingPreviewState.payload.dataset.feature_count,
@@ -1602,10 +2094,10 @@ export function App() {
                         </dd>
                       </div>
                       <div>
-                        <dt>Labels</dt>
+                        <dt>{copy.training.previewLabels}</dt>
                         <dd>
                           {trainingPreviewState.payload.dataset.label_range.min}{" "}
-                          to{" "}
+                          {copy.training.previewRangeTo}{" "}
                           {trainingPreviewState.payload.dataset.label_range.max}
                         </dd>
                       </div>
@@ -1614,9 +2106,9 @@ export function App() {
                     <div className="preview-stat-grid" aria-live="polite">
                       <article className="preview-stat-card">
                         <p className="preview-stat-copy">
-                          Train{" "}
-                          {trainingPreviewState.payload.split.counts.train}{" "}
-                          examples
+                          {copy.training.previewTrainExamples(
+                            trainingPreviewState.payload.split.counts.train,
+                          )}
                         </p>
                         <strong>
                           {formatPercent(
@@ -1626,9 +2118,10 @@ export function App() {
                       </article>
                       <article className="preview-stat-card">
                         <p className="preview-stat-copy">
-                          Validation{" "}
-                          {trainingPreviewState.payload.split.counts.validation}{" "}
-                          examples
+                          {copy.training.previewValidationExamples(
+                            trainingPreviewState.payload.split.counts
+                              .validation,
+                          )}
                         </p>
                         <strong>
                           {formatPercent(
@@ -1639,8 +2132,9 @@ export function App() {
                       </article>
                       <article className="preview-stat-card">
                         <p className="preview-stat-copy">
-                          Test {trainingPreviewState.payload.split.counts.test}{" "}
-                          examples
+                          {copy.training.previewTestExamples(
+                            trainingPreviewState.payload.split.counts.test,
+                          )}
                         </p>
                         <strong>
                           {formatPercent(
@@ -1655,15 +2149,12 @@ export function App() {
                 {trainingPreviewState.kind === "ready" &&
                 trainingJobState.kind === "idle" ? (
                   <p className="status-copy">
-                    Preview is ready. Start training to create a custom model
-                    entry without leaving the shared leaderboard screen.
+                    {copy.training.previewReadyHelp}
                   </p>
                 ) : null}
 
                 {trainingJobState.kind === "submitting" ? (
-                  <p className="status-copy">
-                    Submitting the custom training job.
-                  </p>
+                  <p className="status-copy">{copy.training.submittingJob}</p>
                 ) : null}
 
                 {trainingJobState.kind === "running" ? (
@@ -1703,14 +2194,15 @@ export function App() {
 
                 {trainingJobState.kind === "completed" ? (
                   <p className="status-copy">
-                    {trainingJobState.job.model_name} is now available in the
-                    shared model list.
+                    {copy.training.completedJob(
+                      trainingJobState.job.model_name,
+                    )}
                   </p>
                 ) : null}
 
                 {trainingJobState.kind === "error" ? (
                   <p className="status-copy">
-                    Custom training failed: {trainingJobState.message}
+                    {copy.training.failedJob(trainingJobState.message)}
                   </p>
                 ) : null}
 
@@ -1727,12 +2219,12 @@ export function App() {
           >
             <div className="panel-heading panel-heading--tight">
               <div>
-                <p className="panel-kicker">Model leaderboard</p>
-                <h2 id="leaderboard-heading">Compare available entries</h2>
+                <p className="panel-kicker">{copy.leaderboard.kicker}</p>
+                <h2 id="leaderboard-heading">{copy.leaderboard.heading}</h2>
               </div>
               <div className="sort-control">
                 <label className="field-label" htmlFor="leaderboard-sort">
-                  Sort leaderboard by
+                  {copy.leaderboard.sortLabel}
                 </label>
                 <select
                   id="leaderboard-sort"
@@ -1745,9 +2237,11 @@ export function App() {
                     );
                   }}
                 >
-                  <option value="accuracy">Accuracy</option>
-                  <option value="macro_f1">Macro F1</option>
-                  <option value="avg_inference_ms">Inference latency</option>
+                  <option value="accuracy">{copy.leaderboard.accuracy}</option>
+                  <option value="macro_f1">{copy.leaderboard.macroF1}</option>
+                  <option value="avg_inference_ms">
+                    {copy.leaderboard.inferenceLatency}
+                  </option>
                 </select>
               </div>
             </div>
@@ -1760,10 +2254,10 @@ export function App() {
                 >
                   <thead>
                     <tr>
-                      <th scope="col">Model</th>
-                      <th scope="col">Accuracy</th>
-                      <th scope="col">Macro F1</th>
-                      <th scope="col">Latency</th>
+                      <th scope="col">{copy.leaderboard.modelColumn}</th>
+                      <th scope="col">{copy.leaderboard.accuracy}</th>
+                      <th scope="col">{copy.leaderboard.macroF1}</th>
+                      <th scope="col">{copy.leaderboard.latencyColumn}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1800,7 +2294,7 @@ export function App() {
                                   {model.name}
                                 </span>
                                 <span className="leaderboard-subline">
-                                  {formatModelKind(model.kind)}
+                                  {formatModelKind(model.kind, language)}
                                 </span>
                               </div>
                             </div>
@@ -1826,8 +2320,8 @@ export function App() {
             ) : (
               <p className="status-copy">
                 {bootstrapState.kind === "loading"
-                  ? "The model leaderboard will populate after the backend finishes bootstrapping."
-                  : "The model leaderboard is unavailable until the backend responds."}
+                  ? copy.leaderboard.loading
+                  : copy.leaderboard.unavailable}
               </p>
             )}
           </section>
@@ -1836,7 +2330,7 @@ export function App() {
         <section className="prediction-card" aria-live="polite">
           <div className="model-picker-block">
             <label className="field-label" htmlFor="model-select">
-              Model
+              {copy.modelPicker.label}
             </label>
             <select
               id="model-select"
@@ -1851,15 +2345,15 @@ export function App() {
               {!canChooseModel ? (
                 <option value="">
                   {bootstrapState.kind === "loading"
-                    ? "Loading models"
+                    ? copy.modelPicker.loading
                     : bootstrapState.kind === "error"
-                      ? "Backend unavailable"
-                      : "No models available"}
+                      ? copy.modelPicker.unavailable
+                      : copy.modelPicker.empty}
                 </option>
               ) : (
                 bootstrapState.models.map((model) => (
                   <option key={model.id} value={model.id}>
-                    {`${model.name} (${formatModelKind(model.kind)})`}
+                    {`${model.name} (${formatModelKind(model.kind, language)})`}
                   </option>
                 ))
               )}
@@ -1871,8 +2365,8 @@ export function App() {
 
           <div className="panel-heading">
             <div>
-              <p className="panel-kicker">Model details</p>
-              <h2>{selectedModel?.name ?? "Select a model"}</h2>
+              <p className="panel-kicker">{copy.details.kicker}</p>
+              <h2>{selectedModel?.name ?? copy.details.emptyTitle}</h2>
             </div>
             {selectedModel ? (
               <div className="panel-actions">
@@ -1883,7 +2377,7 @@ export function App() {
                       : "kind-badge--built-in"
                   }`}
                 >
-                  {formatModelKind(selectedModel.kind)}
+                  {formatModelKind(selectedModel.kind, language)}
                 </span>
                 {selectedModel.kind === "custom" ? (
                   <button
@@ -1895,8 +2389,8 @@ export function App() {
                     }}
                   >
                     {isDeletingModel
-                      ? "Deleting custom model"
-                      : "Delete custom model"}
+                      ? copy.training.deletingButton
+                      : copy.training.deleteButton}
                   </button>
                 ) : null}
               </div>
@@ -1907,22 +2401,24 @@ export function App() {
             <>
               <dl className="details-grid details-grid--compact">
                 <div>
-                  <dt>Dataset source</dt>
-                  <dd>{selectedModel.dataset?.source ?? "Pending"}</dd>
+                  <dt>{copy.details.datasetSource}</dt>
+                  <dd>
+                    {selectedModel.dataset?.source ?? copy.common.pending}
+                  </dd>
                 </div>
                 <div>
-                  <dt>Trained at</dt>
-                  <dd>{formatTimestamp(selectedModel.trained_at)}</dd>
+                  <dt>{copy.details.trainedAt}</dt>
+                  <dd>{formatTimestamp(selectedModel.trained_at, language)}</dd>
                 </div>
                 <div>
-                  <dt>Dataset sizes</dt>
-                  <dd>{formatDatasetSizes(selectedModel.dataset)}</dd>
+                  <dt>{copy.details.datasetSizes}</dt>
+                  <dd>{formatDatasetSizes(selectedModel.dataset, language)}</dd>
                 </div>
                 <div>
-                  <dt>Input shape</dt>
+                  <dt>{copy.details.inputShape}</dt>
                   <dd>
                     {selectedModel.dataset?.image_shape ??
-                      formatInputShape(selectedModel.input)}
+                      formatInputShape(selectedModel.input, language)}
                   </dd>
                 </div>
               </dl>
@@ -1946,7 +2442,7 @@ export function App() {
                     role="tab"
                     type="button"
                   >
-                    Overview
+                    {copy.details.overviewTab}
                   </button>
                   <button
                     aria-controls="model-details-deep-panel"
@@ -1961,7 +2457,7 @@ export function App() {
                     role="tab"
                     type="button"
                   >
-                    Deep details
+                    {copy.details.deepTab}
                   </button>
                 </div>
               ) : null}
@@ -1976,8 +2472,10 @@ export function App() {
                   <section className="detail-block">
                     <div className="panel-heading panel-heading--tight">
                       <div>
-                        <p className="panel-kicker">Deep details</p>
-                        <h3>Architecture summary</h3>
+                        <p className="panel-kicker">
+                          {copy.details.deepKicker}
+                        </p>
+                        <h3>{copy.details.architectureSummary}</h3>
                       </div>
                     </div>
                     <div className="sample-grid">
@@ -1988,7 +2486,9 @@ export function App() {
                           className="sample-card"
                           key={`${line}-${index}`}
                         >
-                          <span className="sample-chip">Layer {index + 1}</span>
+                          <span className="sample-chip">
+                            {copy.details.layer(index)}
+                          </span>
                           <strong>{line}</strong>
                         </article>
                       ))}
@@ -1998,19 +2498,23 @@ export function App() {
                   <section className="detail-block">
                     <div className="panel-heading panel-heading--tight">
                       <div>
-                        <p className="panel-kicker">Epoch curves</p>
-                        <h3>Training progression</h3>
+                        <p className="panel-kicker">
+                          {copy.details.epochCurvesKicker}
+                        </p>
+                        <h3>{copy.details.trainingProgression}</h3>
                       </div>
                     </div>
                     <div className="matrix-frame">
                       <table className="matrix-table">
                         <thead>
                           <tr>
-                            <th scope="col">Epoch</th>
-                            <th scope="col">Train loss</th>
-                            <th scope="col">Validation loss</th>
-                            <th scope="col">Train accuracy</th>
-                            <th scope="col">Validation accuracy</th>
+                            <th scope="col">{copy.details.epoch}</th>
+                            <th scope="col">{copy.details.trainLoss}</th>
+                            <th scope="col">{copy.details.validationLoss}</th>
+                            <th scope="col">{copy.details.trainAccuracy}</th>
+                            <th scope="col">
+                              {copy.details.validationAccuracy}
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2059,36 +2563,42 @@ export function App() {
                     <section className="detail-block">
                       <div className="panel-heading panel-heading--tight">
                         <div>
-                          <p className="panel-kicker">Training snapshot</p>
-                          <h3>Saved config and seed</h3>
+                          <p className="panel-kicker">
+                            {copy.details.trainingSnapshotKicker}
+                          </p>
+                          <h3>{copy.details.savedConfigAndSeed}</h3>
                         </div>
                       </div>
                       <dl className="details-grid details-grid--compact">
                         <div>
-                          <dt>Seed</dt>
-                          <dd>{selectedModel.training.seed ?? "Pending"}</dd>
+                          <dt>{copy.details.seedLabel}</dt>
+                          <dd>
+                            {selectedModel.training.seed ?? copy.common.pending}
+                          </dd>
                         </div>
                         <div>
-                          <dt>Classifier</dt>
+                          <dt>{copy.details.classifierLabel}</dt>
                           <dd>
                             {formatClassifierLabel(
                               selectedModel.training.config_snapshot
                                 ?.classifier,
+                              language,
                             )}
                           </dd>
                         </div>
                         <div>
-                          <dt>Uploaded file</dt>
+                          <dt>{copy.details.uploadedFile}</dt>
                           <dd>
                             {selectedModel.training.config_snapshot
-                              ?.file_name ?? "Pending"}
+                              ?.file_name ?? copy.common.pending}
                           </dd>
                         </div>
                         <div>
-                          <dt>Split</dt>
+                          <dt>{copy.details.splitLabel}</dt>
                           <dd>
                             {formatConfiguredSplit(
                               selectedModel.training.config_snapshot?.split,
+                              language,
                             )}
                           </dd>
                         </div>
@@ -2099,13 +2609,15 @@ export function App() {
                   <section className="detail-block">
                     <div className="panel-heading panel-heading--tight">
                       <div>
-                        <p className="panel-kicker">Metrics</p>
-                        <h3>Leaderboard metrics</h3>
+                        <p className="panel-kicker">
+                          {copy.details.metricsKicker}
+                        </p>
+                        <h3>{copy.details.leaderboardMetrics}</h3>
                       </div>
                     </div>
                     <dl className="details-grid details-grid--compact">
                       <div>
-                        <dt>Accuracy</dt>
+                        <dt>{copy.leaderboard.accuracy}</dt>
                         <dd>
                           {formatMetric(
                             selectedModel.metrics?.accuracy,
@@ -2114,7 +2626,7 @@ export function App() {
                         </dd>
                       </div>
                       <div>
-                        <dt>Macro precision</dt>
+                        <dt>{copy.details.macroPrecision}</dt>
                         <dd>
                           {formatMetric(
                             selectedModel.metrics?.macro_precision,
@@ -2123,7 +2635,7 @@ export function App() {
                         </dd>
                       </div>
                       <div>
-                        <dt>Macro recall</dt>
+                        <dt>{copy.details.macroRecall}</dt>
                         <dd>
                           {formatMetric(
                             selectedModel.metrics?.macro_recall,
@@ -2132,7 +2644,7 @@ export function App() {
                         </dd>
                       </div>
                       <div>
-                        <dt>Macro F1</dt>
+                        <dt>{copy.leaderboard.macroF1}</dt>
                         <dd>
                           {formatMetric(
                             selectedModel.metrics?.macro_f1,
@@ -2141,7 +2653,7 @@ export function App() {
                         </dd>
                       </div>
                       <div>
-                        <dt>Inference latency</dt>
+                        <dt>{copy.leaderboard.inferenceLatency}</dt>
                         <dd>
                           {formatMetric(
                             selectedModel.metrics?.avg_inference_ms,
@@ -2155,8 +2667,10 @@ export function App() {
                   <section className="detail-block">
                     <div className="panel-heading panel-heading--tight">
                       <div>
-                        <p className="panel-kicker">Hyperparameters</p>
-                        <h3>Reference configuration</h3>
+                        <p className="panel-kicker">
+                          {copy.details.hyperparametersKicker}
+                        </p>
+                        <h3>{copy.details.referenceConfiguration}</h3>
                       </div>
                     </div>
                     <div className="tag-grid">
@@ -2164,7 +2678,7 @@ export function App() {
                         ([key, value]) => (
                           <div className="tag-card" key={key}>
                             <span className="tag-label">
-                              {formatKeyLabel(key)}
+                              {formatKeyLabel(key, language)}
                             </span>
                             <strong>{String(value)}</strong>
                           </div>
@@ -2176,15 +2690,17 @@ export function App() {
                   <section className="detail-block">
                     <div className="panel-heading panel-heading--tight">
                       <div>
-                        <p className="panel-kicker">Confusion matrix</p>
-                        <h3>Evaluation breakdown</h3>
+                        <p className="panel-kicker">
+                          {copy.details.confusionMatrixKicker}
+                        </p>
+                        <h3>{copy.details.evaluationBreakdown}</h3>
                       </div>
                     </div>
                     <div className="matrix-frame">
                       <table className="matrix-table">
                         <thead>
                           <tr>
-                            <th scope="col">Actual\\Pred</th>
+                            <th scope="col">{copy.details.actualPred}</th>
                             {renderDigitHeaders()}
                           </tr>
                         </thead>
@@ -2207,8 +2723,10 @@ export function App() {
                   <section className="detail-block">
                     <div className="panel-heading panel-heading--tight">
                       <div>
-                        <p className="panel-kicker">Sample predictions</p>
-                        <h3>Held-out examples</h3>
+                        <p className="panel-kicker">
+                          {copy.details.samplePredictionsKicker}
+                        </p>
+                        <h3>{copy.details.heldOutExamples}</h3>
                       </div>
                     </div>
                     <div className="sample-grid">
@@ -2219,7 +2737,10 @@ export function App() {
                             key={`${sample.label}-${index}`}
                           >
                             <span className="sample-chip">
-                              Actual {sample.label} predicted {sample.predicted}
+                              {copy.details.samplePrediction(
+                                sample.label,
+                                sample.predicted,
+                              )}
                             </span>
                             <strong>
                               {formatConfidence(sample.confidence)}
@@ -2233,45 +2754,39 @@ export function App() {
               )}
             </>
           ) : (
-            <p className="status-copy">
-              Select a model from the leaderboard to inspect its metadata and
-              evaluation details.
-            </p>
+            <p className="status-copy">{copy.details.emptyHelp}</p>
           )}
 
           <div className="section-divider" />
 
           <div className="panel-heading panel-heading--tight">
             <div>
-              <p className="panel-kicker">Prediction</p>
-              <h3>Confidence profile</h3>
+              <p className="panel-kicker">{copy.prediction.kicker}</p>
+              <h3>{copy.prediction.title}</h3>
             </div>
           </div>
 
           {predictionState.kind === "idle" ? (
-            <p className="status-copy">
-              Paint a digit and run the selected model to see the predicted
-              class and the full digit confidence spread.
-            </p>
+            <p className="status-copy">{copy.prediction.idleHelp}</p>
           ) : null}
 
           {predictionState.kind === "error" ? (
             <p className="status-copy">
-              Prediction failed: {predictionState.message}
+              {copy.prediction.error(predictionState.message)}
             </p>
           ) : null}
 
           {predictionState.kind === "loading" ? (
-            <p className="status-copy">
-              Normalizing the sketch and scoring it against the selected model.
-            </p>
+            <p className="status-copy">{copy.prediction.loading}</p>
           ) : null}
 
           {predictionState.kind === "ready" ? (
             <>
               <p className="prediction-headline">
-                {predictionState.payload.model.name} predicts{" "}
-                {predictionState.payload.prediction.digit}
+                {copy.prediction.headline(
+                  predictionState.payload.model.name,
+                  predictionState.payload.prediction.digit,
+                )}
               </p>
               <div className="confidence-grid">
                 {predictionState.payload.prediction.confidences.map(
@@ -2448,23 +2963,30 @@ function formatLoss(value: number | undefined) {
   return value.toFixed(3);
 }
 
-function formatTimestamp(value: string | undefined) {
+function formatTimestamp(value: string | undefined, language: Language) {
   if (!value) {
-    return "Pending";
+    return APP_COPY[language].common.pending;
   }
 
   return value.replace("T", " ").replace("Z", " UTC");
 }
 
-function formatDatasetSizes(dataset: ModelDataset | undefined) {
+function formatDatasetSizes(
+  dataset: ModelDataset | undefined,
+  language: Language,
+) {
   if (!dataset) {
-    return "Pending";
+    return APP_COPY[language].common.pending;
   }
 
+  const copy = APP_COPY[language];
+
   return [
-    `Train ${formatCount(dataset.train_examples)}`,
-    `Val ${formatCount(dataset.validation_examples)}`,
-    `Test ${formatCount(dataset.test_examples)}`,
+    `${copy.common.trainShort} ${formatCount(dataset.train_examples)}`,
+    `${copy.common.validationShort} ${formatCount(
+      dataset.validation_examples,
+    )}`,
+    `${copy.common.testShort} ${formatCount(dataset.test_examples)}`,
   ].join(" | ");
 }
 
@@ -2484,9 +3006,10 @@ function formatInputShape(
         encoding?: string;
       }
     | undefined,
+  language: Language,
 ) {
   if (!input) {
-    return "Pending";
+    return APP_COPY[language].common.pending;
   }
 
   return `${input.width}x${input.height}${
@@ -2494,19 +3017,49 @@ function formatInputShape(
   }`;
 }
 
-function formatKeyLabel(key: string) {
+function formatKeyLabel(key: string, language: Language) {
+  if (language === "sr") {
+    const translatedLabel = {
+      prototype_grid_size: "Velicina mreze prototipa",
+      distance_metric: "Metrika distance",
+      epochs: "Broj epoha",
+      batch_size: "Velicina batch-a",
+      learning_rate: "Stopa ucenja",
+      neighbors: "Broj suseda",
+      pca_components: "PCA komponente",
+      regularization: "Regularizacija",
+      max_iter: "Maksimalan broj iteracija",
+      estimators: "Broj estimatora",
+      max_depth: "Maksimalna dubina",
+      max_examples_per_label: "Maksimalno primera po oznaci",
+      prototype_blend: "Mesanje prototipa",
+      temperature: "Temperatura",
+    }[key];
+
+    if (translatedLabel) {
+      return translatedLabel;
+    }
+  }
+
   return key
     .split(/[_-]/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 }
 
-function formatModelKind(kind: string) {
-  return kind === "custom" ? "Custom" : "Built-in";
+function formatModelKind(kind: string, language: Language) {
+  return kind === "custom"
+    ? APP_COPY[language].details.custom
+    : APP_COPY[language].details.builtIn;
 }
 
-function formatClassifierLabel(classifier: string | undefined) {
-  return classifier ? formatTrainingModelLabel(classifier) : "Pending";
+function formatClassifierLabel(
+  classifier: string | undefined,
+  language: Language,
+) {
+  return classifier
+    ? formatTrainingModelLabel(classifier, language)
+    : APP_COPY[language].common.pending;
 }
 
 function formatConfiguredSplit(
@@ -2517,38 +3070,39 @@ function formatConfiguredSplit(
         test_ratio: number;
       }
     | undefined,
+  language: Language,
 ) {
   if (!split) {
-    return "Pending";
+    return APP_COPY[language].common.pending;
   }
 
+  const copy = APP_COPY[language];
+
   return [
-    `Train ${formatPercent(split.train_ratio)}`,
-    `Val ${formatPercent(split.validation_ratio)}`,
-    `Test ${formatPercent(split.test_ratio)}`,
+    `${copy.common.trainShort} ${formatPercent(split.train_ratio)}`,
+    `${copy.common.validationShort} ${formatPercent(split.validation_ratio)}`,
+    `${copy.common.testShort} ${formatPercent(split.test_ratio)}`,
   ].join(" | ");
 }
 
-function getCustomTrainingWarnings(form: CustomTrainingForm) {
+function getCustomTrainingWarnings(
+  form: CustomTrainingForm,
+  language: Language,
+) {
+  const copy = APP_COPY[language];
   const warnings: string[] = [];
 
   if (form.modelFamily === "prototype") {
     if (form.maxExamplesPerLabel > 1000) {
-      warnings.push(
-        "Large per-label caps can slow the prototype baseline on classroom hardware.",
-      );
+      warnings.push(copy.training.prototypeWarningLargeCap);
     }
 
     if (form.prototypeBlend > 0.75) {
-      warnings.push(
-        "High prototype blend leans heavily on the shipped baseline and can hide dataset differences.",
-      );
+      warnings.push(copy.training.prototypeWarningBlend);
     }
 
     if (form.temperature > 30) {
-      warnings.push(
-        "Very high confidence temperature can make score gaps look sharper than the underlying distances.",
-      );
+      warnings.push(copy.training.prototypeWarningTemperature);
     }
 
     return warnings;
@@ -2556,61 +3110,45 @@ function getCustomTrainingWarnings(form: CustomTrainingForm) {
 
   if (form.modelFamily === "mlp" || form.modelFamily === "cnn") {
     if (form.epochs > 6) {
-      warnings.push(
-        "Longer deep runs can noticeably increase training time on classroom hardware.",
-      );
+      warnings.push(copy.training.deepWarningEpochs);
     }
 
     if (form.batchSize > 64) {
-      warnings.push(
-        "Very large batch sizes can make small uploaded splits less stable during version-one deep training.",
-      );
+      warnings.push(copy.training.deepWarningBatchSize);
     }
 
     if (form.learningRate > 0.01) {
-      warnings.push(
-        "Aggressive learning rates can make custom deep runs unstable or noisy.",
-      );
+      warnings.push(copy.training.deepWarningLearningRate);
     }
 
     return warnings;
   }
 
   if (form.pcaComponents > 32) {
-    warnings.push(
-      "Larger PCA projections need more examples and can slow down classroom-size custom runs.",
-    );
+    warnings.push(copy.training.pcaWarning);
   }
 
   if (form.modelFamily === "knn" && form.neighbors > 7) {
-    warnings.push(
-      "Higher neighbor counts smooth predictions more aggressively and can blur similar digits.",
-    );
+    warnings.push(copy.training.knnWarningNeighbors);
   }
 
   if (form.modelFamily === "svm") {
     if (form.regularization > 3) {
-      warnings.push(
-        "Higher SVM regularization values can fit tightly to a small uploaded split.",
-      );
+      warnings.push(copy.training.svmWarningRegularization);
     }
 
     if (form.maxIter > 10000) {
-      warnings.push(
-        "Longer SVM iteration budgets can noticeably increase version-one training time.",
-      );
+      warnings.push(copy.training.svmWarningMaxIter);
     }
   }
 
   if (form.modelFamily === "random-forest") {
     if (form.estimators > 200) {
-      warnings.push(
-        "Larger forests improve stability but will push training time up on classroom hardware.",
-      );
+      warnings.push(copy.training.forestWarningEstimators);
     }
 
     if (form.maxDepth > 24) {
-      warnings.push("Very deep trees can overfit small uploaded datasets.");
+      warnings.push(copy.training.forestWarningMaxDepth);
     }
   }
 
@@ -2656,13 +3194,15 @@ function buildCustomTrainingHyperparameters(form: CustomTrainingForm) {
   };
 }
 
-function formatTrainingModelLabel(modelFamily: string) {
+function formatTrainingModelLabel(modelFamily: string, language: Language) {
+  const copy = APP_COPY[language];
+
   if (modelFamily === "prototype" || modelFamily === "reference-prototype") {
-    return "Reference prototype";
+    return copy.training.modelOptionPrototype;
   }
 
   if (modelFamily === "knn") {
-    return "k-NN";
+    return language === "sr" ? "k-NN" : "k-NN";
   }
 
   if (modelFamily === "svm") {
@@ -2670,7 +3210,7 @@ function formatTrainingModelLabel(modelFamily: string) {
   }
 
   if (modelFamily === "random-forest") {
-    return "Random Forest";
+    return language === "sr" ? "Random Forest" : "Random Forest";
   }
 
   if (modelFamily === "mlp") {
@@ -2681,7 +3221,7 @@ function formatTrainingModelLabel(modelFamily: string) {
     return "CNN";
   }
 
-  return formatKeyLabel(modelFamily);
+  return formatKeyLabel(modelFamily, language);
 }
 
 async function readFetchErrorMessage(response: Response, input: string) {

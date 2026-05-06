@@ -27,11 +27,115 @@ function makeTrainingCsv(exampleCount = 10) {
   return rows.join("\n");
 }
 
+function switchToEnglishInterface() {
+  fireEvent.click(screen.getByRole("button", { name: /^english$/i }));
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("App", () => {
+  it("defaults the interface copy to Serbian on first render", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (input === "/api/health") {
+        return {
+          ok: true,
+          json: async () => ({
+            status: "ok",
+            service: "mnist-backend",
+            storage: {
+              ready: true,
+              root: "O:/Projects/MNIST Projekat/data",
+              directories: ["shipped-models", "custom-models", "registry"],
+            },
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          models: [
+            {
+              id: "reference-prototype-v1",
+              name: "Reference Prototype",
+              kind: "built-in",
+            },
+          ],
+        }),
+      };
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(
+      screen.getByRole("heading", {
+        name: /pregledaj metrike modela\. testiraj cifru uzivo\./i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^predvidjanje$/i }),
+    ).toBeInTheDocument();
+
+    expect(await screen.findByText("Backend spreman")).toBeInTheDocument();
+  });
+
+  it("switches the current interface copy to English", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (input === "/api/health") {
+        return {
+          ok: true,
+          json: async () => ({
+            status: "ok",
+            service: "mnist-backend",
+            storage: {
+              ready: true,
+              root: "O:/Projects/MNIST Projekat/data",
+              directories: ["shipped-models", "custom-models", "registry"],
+            },
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          models: [
+            {
+              id: "reference-prototype-v1",
+              name: "Reference Prototype",
+              kind: "built-in",
+            },
+          ],
+        }),
+      };
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("Backend spreman");
+
+    fireEvent.click(screen.getByRole("button", { name: /^english$/i }));
+
+    expect(
+      screen.getByRole("heading", {
+        name: /inspect leaderboard metadata\. score a digit live\./i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /prediction mode/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Backend ready")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /predvidjanje/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows backend readiness from the health endpoint", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       if (input === "/api/health") {
@@ -66,6 +170,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
+    switchToEnglishInterface();
 
     expect(screen.getByText(/checking backend status/i)).toBeInTheDocument();
 
@@ -124,6 +229,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
+    switchToEnglishInterface();
 
     expect(await screen.findByText("Backend ready")).toBeInTheDocument();
     expect(healthAttempts).toBeGreaterThan(1);
@@ -192,6 +298,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
+    switchToEnglishInterface();
 
     expect(
       await screen.findByRole("combobox", { name: /^model$/i }),
@@ -323,6 +430,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
+    switchToEnglishInterface();
 
     const leaderboard = await screen.findByRole("table", {
       name: /model leaderboard/i,
@@ -445,6 +553,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
+    switchToEnglishInterface();
 
     expect(
       await screen.findByRole("tablist", { name: /model detail sections/i }),
@@ -535,6 +644,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
+    switchToEnglishInterface();
 
     expect(
       await screen.findByRole("button", { name: /training mode/i }),
@@ -633,6 +743,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
+    switchToEnglishInterface();
 
     fireEvent.click(
       await screen.findByRole("button", { name: /training mode/i }),
@@ -724,6 +835,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
+    switchToEnglishInterface();
 
     fireEvent.click(
       await screen.findByRole("button", { name: /training mode/i }),
@@ -880,6 +992,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
+    switchToEnglishInterface();
 
     fireEvent.click(
       await screen.findByRole("button", { name: /training mode/i }),
@@ -1168,6 +1281,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
+    switchToEnglishInterface();
 
     fireEvent.click(
       await screen.findByRole("button", { name: /training mode/i }),
@@ -1406,6 +1520,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
+    switchToEnglishInterface();
 
     fireEvent.click(
       await screen.findByRole("button", { name: /training mode/i }),
@@ -1667,6 +1782,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
+    switchToEnglishInterface();
 
     fireEvent.click(
       await screen.findByRole("button", { name: /training mode/i }),
